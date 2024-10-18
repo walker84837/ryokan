@@ -4,3 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+aes-gcm = "0.10.3"
+anyhow = "1.0.89"
+argon2 = "0.5.3"
+crossterm = "0.28.1"
+dirs = "5.0.1"
+log = "0.4.22"
+rand = "0.8.5"
+serde = "1.0.210"
+serde_derive = "1.0.210"
+simple_logger = "5.0.0"
+tempfile = "3.13.0"
+toml = "0.8.19"
+tui = "0.19.0"
+uuid = { version = "1.11.0", features = ["v4", "fast-rng"] }

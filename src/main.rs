@@ -4,34 +4,19 @@ use aes_gcm::{
 };
 use anyhow::{Context, Result};
 use argon2::password_hash::Salt;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use crossterm::{
-    event::Event,
-    terminal::{disable_raw_mode, enable_raw_mode},
-};
-use log::{error, info, warn};
+use argon2::{Argon2, PasswordHasher, PasswordVerifier};
+use log::{info, warn};
 use rand::rngs::OsRng;
 use rand::{self, Rng, RngCore};
 use serde_derive::{Deserialize, Serialize};
-use std::time::Duration;
 use std::{
     fs::File,
     io::{self, Read, Write},
     path::{Path, PathBuf},
     process::{self, Command},
 };
-use tempfile::NamedTempFile;
-use tui::backend::CrosstermBackend;
-use tui::{
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Span, Spans},
-    widgets::{Block, Borders, Paragraph},
-    Terminal,
-};
+use tui::{layout, style, text, widgets};
 use uuid::Uuid;
-
-fn init_logger() {}
 
 // Config struct for handling configuration loading and saving
 #[derive(Default, Serialize, Deserialize)]
@@ -97,9 +82,9 @@ impl PinManager {
         let mut config = Config::load();
         let salt = rand::thread_rng().gen::<[u8; 16]>();
         let argon2 = Argon2::default();
-        let salt = Salt::new(&salt).unwrap(); // Corrected salt conversion
+        let salt = Salt::from_b64(&salt).unwrap();
         let hash = argon2
-            .hash_password(pin.as_bytes(), &salt)
+            .hash_password(pin.as_bytes(), *&salt)
             .map(|p| p.to_string())
             .unwrap();
         config.pin_hash = Some(hash);
@@ -109,10 +94,7 @@ impl PinManager {
     pub fn verify_pin(pin: &str) -> bool {
         if let Some(stored_hash) = Self::load_pin_hash() {
             let argon2 = Argon2::default();
-            match argon2.verify_password(
-                pin.as_bytes(),
-                &stored_hash.into(), // Correct parsing
-            ) {
+            match argon2.verify_password(pin.as_bytes(), &stored_hash.into()) {
                 Ok(_) => true,
                 Err(_) => false,
             }

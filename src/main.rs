@@ -3,19 +3,17 @@ use aes_gcm::{
     Aes256Gcm, Key,
 };
 use anyhow::{Context, Result};
-use argon2::password_hash::Salt;
-use argon2::{Argon2, PasswordHasher, PasswordVerifier};
-use log::{info, warn};
+use argon2::{password_hash::Salt, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use log::info;
 use rand::rngs::OsRng;
 use rand::{self, Rng, RngCore};
 use serde_derive::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{self, Read, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{self, Command},
 };
-use tui::{layout, style, text, widgets};
 use uuid::Uuid;
 
 // Config struct for handling configuration loading and saving
@@ -82,7 +80,8 @@ impl PinManager {
         let mut config = Config::load();
         let salt = rand::thread_rng().gen::<[u8; 16]>();
         let argon2 = Argon2::default();
-        let salt = Salt::from_b64(&salt).unwrap();
+        let salt_str = base64::encode(&salt);
+        let salt = Salt::from_b64(&salt_str).unwrap();
         let hash = argon2
             .hash_password(pin.as_bytes(), *&salt)
             .map(|p| p.to_string())
@@ -94,7 +93,8 @@ impl PinManager {
     pub fn verify_pin(pin: &str) -> bool {
         if let Some(stored_hash) = Self::load_pin_hash() {
             let argon2 = Argon2::default();
-            match argon2.verify_password(pin.as_bytes(), &stored_hash.into()) {
+            let stored_hash = PasswordHash::new(&stored_hash).unwrap();
+            match argon2.verify_password(pin.as_bytes(), &stored_hash) {
                 Ok(_) => true,
                 Err(_) => false,
             }

@@ -2,6 +2,7 @@ use crate::config::Config;
 use aes_gcm::Key;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher, PasswordVerifier};
+use log::{info, warn};
 use std::{io, process};
 use thiserror::Error;
 
@@ -26,30 +27,39 @@ impl PinManager {
         pin
     }
 
-    pub fn load_pin_hash() -> Option<String> {
-        let config = Config::new();
-        config.pin_hash
+    pub fn load_pin_hash(config: &Config) -> Option<String> {
+        let pin_hash = &config.pin_hash;
+        match pin_hash.is_empty() {
+            true => None,
+            false => Some(pin_hash.to_string()),
+        }
     }
 
-    pub fn store_pin(pin: &str) {
-        let mut config = Config::new();
+    pub fn store_pin(config: &mut Config, pin: &str) {
         let salt = SaltString::generate(&mut rand::thread_rng());
         let argon2 = Argon2::default();
         let hash = argon2
             .hash_password(pin.as_bytes(), &salt)
             .unwrap()
             .to_string();
-        config.pin_hash = Some(hash);
-        config.save();
+        config.pin_hash = hash;
+        info!("Saving configuration file to config path");
+        config.save().unwrap();
     }
 
-    pub fn verify_pin(pin: &str) -> bool {
-        if let Some(stored_hash) = Self::load_pin_hash() {
-            let argon2 = Argon2::default();
-            let parsed_hash = argon2::PasswordHash::new(&stored_hash).unwrap();
-            argon2.verify_password(pin.as_bytes(), &parsed_hash).is_ok()
-        } else {
-            false
+    pub fn verify_pin(config: &Config, pin: &str) -> bool {
+        match Self::load_pin_hash(config) {
+            Some(stored_hash) => {
+                let argon2 = Argon2::default();
+                if stored_hash.is_empty() {
+                    warn!("Stored hash seems to be empty, assuming PIN can't be verified.");
+                    return false;
+                }
+                let parsed_hash = argon2::PasswordHash::new(&stored_hash).unwrap();
+                info!("Verifying PIN");
+                argon2.verify_password(pin.as_bytes(), &parsed_hash).is_ok()
+            }
+            None => false,
         }
     }
 

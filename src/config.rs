@@ -1,7 +1,6 @@
 use serde_derive::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-// Config struct for handling configuration loading and saving
 #[derive(Default, Serialize, Deserialize)]
 pub struct Config {
     pub pin_hash: Option<String>,
@@ -12,9 +11,8 @@ impl Config {
     pub fn new() -> Self {
         let config_path = Self::config_file_path();
         if config_path.exists() {
-            let config_str =
-                std::fs::read_to_string(config_path).expect("Unable to read config file");
-            toml::de::from_str(&config_str).unwrap_or_default()
+            let config_str = std::fs::read_to_string(config_path).unwrap_or_default();
+            toml::from_str(&config_str).unwrap_or_default()
         } else {
             Self {
                 pin_hash: None,
@@ -29,7 +27,7 @@ impl Config {
     }
 
     pub fn load_notes_dir() -> Option<String> {
-        let config = Config::load();
+        let config = Config::new();
         config.notes_dir
     }
 

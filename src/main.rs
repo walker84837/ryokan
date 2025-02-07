@@ -14,8 +14,8 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Terminal,
 };
 use std::{
@@ -42,6 +42,7 @@ impl FileManager {
             .context("Unable to read file")?;
 
         NoteManager::decrypt_note_content(&encrypted_data, pin)
+            .context("Failed to decrypt note content")
     }
 }
 
@@ -71,15 +72,24 @@ fn main() -> Result<()> {
         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
         .collect::<Vec<_>>();
 
+    let mut list_state = ListState::default();
     let mut selected = 0;
+    list_state.select(Some(selected));
 
     loop {
         terminal.draw(|f| {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
-                .constraints([Constraint::Percentage(70), Constraint::Percentage(20)].as_ref())
-                .split(f.size());
+                .constraints(
+                    [
+                        Constraint::Percentage(70),
+                        Constraint::Percentage(20),
+                        Constraint::Min(3),
+                    ]
+                    .as_ref(),
+                )
+                .split(f.area());
 
             // Notes list
             let items: Vec<_> = notes
@@ -97,22 +107,21 @@ fn main() -> Result<()> {
                         .add_modifier(Modifier::BOLD),
                 )
                 .highlight_symbol(">> ");
-            f.render_stateful_widget(
-                notes_list,
-                chunks[0],
-                &mut ratatui::widgets::ListState::default().select(Some(selected)),
-            );
+            f.render_stateful_widget(notes_list, chunks[0], &mut list_state);
 
             // Note preview
-            let preview = if let Some(note) = notes.get(selected) {
-                let filename = note.path();
-                if let Ok(content) = FileManager::load_and_decrypt_note_content(
-                    filename.to_string_lossy().as_ref(),
-                    &pin,
-                ) {
-                    String::from_utf8_lossy(&content).to_string()
+            let preview = if let Some(selected) = list_state.selected() {
+                if let Some(note) = notes.get(selected) {
+                    let filename = note.path();
+                    match FileManager::load_and_decrypt_note_content(
+                        filename.to_string_lossy().as_ref(),
+                        &pin,
+                    ) {
+                        Ok(content) => String::from_utf8_lossy(&content).to_string(),
+                        Err(_) => "Error reading note.".to_string(),
+                    }
                 } else {
-                    "Error reading note.".to_string()
+                    "No note selected.".to_string()
                 }
             } else {
                 "No note selected.".to_string()
@@ -122,7 +131,7 @@ fn main() -> Result<()> {
             f.render_widget(preview_paragraph, chunks[1]);
 
             // Keybinding tips
-            let help_text = Spans::from(vec![
+            let help_text = Line::from(vec![
                 Span::raw("Up/Down: Navigate  "),
                 Span::raw("Enter: Open in Editor  "),
                 Span::raw("q: Quit"),
@@ -137,16 +146,33 @@ fn main() -> Result<()> {
                 KeyCode::Down => {
                     if selected < notes.len().saturating_sub(1) {
                         selected += 1;
+                        list_state.select(Some(selected));
                     }
                 }
                 KeyCode::Up => {
                     if selected > 0 {
                         selected -= 1;
+                        list_state.select(Some(selected));
                     }
                 }
                 KeyCode::Enter => {
-                    if let Some(note) = notes.get(selected) {
-                        open_in_editor(note.path().to_string_lossy().as_ref())?;
+                    if let Some(selected) = list_state.selected() {
+                        if let Some(note) = notes.get(selected) {
+                            let temp_file = format!("temp_{}.txt", Uuid::new_v4());
+                            let decrypted_content = FileManager::load_and_decrypt_note_content(
+                                note.path().to_string_lossy().as_ref(),
+                                &pin,
+                            )?;
+                            FileManager::save_note_to_file(&decrypted_content, &temp_file)?;
+                            open_in_editor(&temp_file)?;
+                            let encrypted_content =
+                                NoteManager::encrypt_note_content(&decrypted_content, &pin)?;
+                            FileManager::save_note_to_file(
+                                &encrypted_content,
+                                note.path().to_string_lossy().as_ref(),
+                            )?;
+                            fs::remove_file(temp_file)?;
+                        }
                     }
                 }
                 _ => {}

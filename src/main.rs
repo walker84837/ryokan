@@ -95,8 +95,8 @@ fn main() -> Result<()> {
             let items: Vec<_> = notes
                 .iter()
                 .map(|note| {
-                    let filename = note.file_name().to_string_lossy();
-                    ListItem::new(filename.to_string())
+                    let filename = note.file_name().to_string_lossy().to_owned().to_string();
+                    ListItem::new(filename)
                 })
                 .collect();
             let notes_list = List::new(items)

@@ -1,4 +1,5 @@
 use crate::pin_manager::PinManagerError;
+use crate::PinManager;
 use aes_gcm::{
     aead::{Aead, KeyInit, Nonce},
     Aes256Gcm, Key,

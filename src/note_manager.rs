@@ -48,7 +48,7 @@ impl NoteManager {
         let key = PinManager::derive_key_from_pin(pin, salt)?;
         let cipher = Aes256Gcm::new(&key);
 
-        let nonce = Aes256Gcm::Nonce::from_slice(nonce_slice);
+        let nonce = aes_gcm::Nonce::from_slice(nonce_slice);
 
         let decrypted = cipher
             .decrypt(nonce, ciphertext)

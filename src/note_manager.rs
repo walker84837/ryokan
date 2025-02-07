@@ -1,8 +1,8 @@
 use crate::pin_manager::PinManagerError;
 use crate::PinManager;
 use aes_gcm::{
-    aead::{Aead, KeyInit, Nonce},
-    Aes256Gcm, Key,
+    aead::{Aead, AeadCore, KeyInit},
+    Aes256Gcm,
 };
 use rand::{self, rngs::OsRng, RngCore};
 use thiserror::Error;
@@ -29,11 +29,10 @@ impl NoteManager {
         let key = PinManager::derive_key_from_pin(pin, &salt)?;
         let cipher = Aes256Gcm::new(&key);
 
-        let mut nonce = [0u8; 12];
-        OsRng.fill_bytes(&mut nonce);
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
         let ciphertext = cipher
-            .encrypt(Nonce::from_slice(&nonce), content)
+            .encrypt(&nonce, content)
             .map_err(NoteManagerError::EncryptionFailed)?;
 
         Ok([salt.as_slice(), nonce.as_slice(), &ciphertext].concat())
@@ -44,13 +43,15 @@ impl NoteManager {
         pin: &str,
     ) -> Result<Vec<u8>, NoteManagerError> {
         let (salt, remainder) = encrypted_data.split_at(16);
-        let (nonce, ciphertext) = remainder.split_at(12);
+        let (nonce_slice, ciphertext) = remainder.split_at(12);
 
         let key = PinManager::derive_key_from_pin(pin, salt)?;
         let cipher = Aes256Gcm::new(&key);
 
+        let nonce = Aes256Gcm::Nonce::from_slice(nonce_slice);
+
         let decrypted = cipher
-            .decrypt(Nonce::from_slice(nonce), ciphertext)
+            .decrypt(nonce, ciphertext)
             .map_err(NoteManagerError::DecryptionFailed)?;
 
         Ok(decrypted)

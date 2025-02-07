@@ -1,8 +1,8 @@
 use crate::config::Config;
 use aes_gcm::Key;
+use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher, PasswordVerifier};
 use base64::{engine::general_purpose::STANDARD as b64, Engine};
-use rand::Rng;
 use std::{io, process};
 use thiserror::Error;
 
@@ -34,11 +34,10 @@ impl PinManager {
 
     pub fn store_pin(pin: &str) {
         let mut config = Config::new();
-        let salt = rand::thread_rng().gen::<[u8; 16]>();
+        let salt = SaltString::generate(&mut rand::thread_rng());
         let argon2 = Argon2::default();
-        let salt_str = b64.encode(&salt);
         let hash = argon2
-            .hash_password(pin.as_bytes(), &salt_str.as_bytes().into())
+            .hash_password(pin.as_bytes(), &salt)
             .unwrap()
             .to_string();
         config.pin_hash = Some(hash);
@@ -61,7 +60,9 @@ impl PinManager {
     ) -> Result<Key<aes_gcm::Aes256Gcm>, PinManagerError> {
         let argon2 = Argon2::default();
         let mut key = [0u8; 32];
-        argon2.hash_password_into(pin.as_bytes(), salt, &mut key)?;
+        argon2
+            .hash_password_into(pin.as_bytes(), salt, &mut key)
+            .map_err(|e| PinManagerError::KeyDerivationError(e.into()));
         Ok(*Key::<aes_gcm::Aes256Gcm>::from_slice(&key))
     }
 }

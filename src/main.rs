@@ -2,7 +2,7 @@ mod config;
 mod note_manager;
 mod pin_manager;
 
-use crate::{note_manager::NoteManager, pin_manager::PinManager};
+use crate::{config::Config, note_manager::NoteManager, pin_manager::PinManager};
 use anyhow::{Context, Result};
 use crossterm::{
     event::{self, Event, KeyCode},
@@ -21,6 +21,7 @@ use ratatui::{
 use std::{
     fs::{self, File},
     io::{self, Read, Write},
+    path::PathBuf,
     process::Command,
 };
 use uuid::Uuid;
@@ -58,8 +59,22 @@ fn open_in_editor(filename: &str) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let pin = PinManager::ask_for_pin();
-    PinManager::store_pin(&pin);
+    let stored_pin_hash = PinManager::load_pin_hash();
+    let pin = if stored_pin_hash.is_some() {
+        loop {
+            let entered_pin = PinManager::ask_for_pin();
+            if PinManager::verify_pin(&entered_pin) {
+                break entered_pin;
+            } else {
+                println!("Incorrect PIN. Please try again.");
+            }
+        }
+    } else {
+        println!("No PIN found. Please set a new 6-digit PIN.");
+        let new_pin = PinManager::ask_for_pin();
+        PinManager::store_pin(&new_pin);
+        new_pin
+    };
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -67,7 +82,10 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let notes = fs::read_dir(".")?
+    let notes_dir = Config::load_notes_dir()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let mut notes = fs::read_dir(&notes_dir)?
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
         .collect::<Vec<_>>();
@@ -133,7 +151,8 @@ fn main() -> Result<()> {
             // Keybinding tips
             let help_text = Line::from(vec![
                 Span::raw("Up/Down: Navigate  "),
-                Span::raw("Enter: Open in Editor  "),
+                Span::raw("Enter: Open/Edit  "),
+                Span::raw("n: New Note  "),
                 Span::raw("q: Quit"),
             ]);
             let help = Paragraph::new(help_text).block(Block::default().borders(Borders::ALL));
@@ -143,6 +162,19 @@ fn main() -> Result<()> {
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Char('q') => break,
+                KeyCode::Char('n') => {
+                    let notes_dir = Config::load_notes_dir().unwrap_or_else(|| ".".to_string());
+                    let notes_dir_path = PathBuf::from(&notes_dir);
+                    let filename = generate_uuid_filename();
+                    let path = notes_dir_path.join(&filename);
+                    let encrypted_content = NoteManager::encrypt_note_content(&Vec::new(), &pin)?;
+                    FileManager::save_note_to_file(&encrypted_content, &path.to_string_lossy())?;
+                    // Reload notes list
+                    notes = fs::read_dir(notes_dir_path)?
+                        .filter_map(|entry| entry.ok())
+                        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
+                        .collect();
+                }
                 KeyCode::Down => {
                     if selected < notes.len().saturating_sub(1) {
                         selected += 1;

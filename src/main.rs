@@ -1,157 +1,30 @@
-use aes_gcm::{
-    aead::{Aead, KeyInit, Nonce},
-    Aes256Gcm, Key,
-};
+mod config;
+mod note_manager;
+mod pin_manager;
+
+use crate::{note_manager::NoteManager, pin_manager::PinManager};
 use anyhow::{Context, Result};
-use argon2::password_hash::Salt;
-use argon2::{Argon2, PasswordHasher, PasswordVerifier};
-use log::{info, warn};
-use rand::rngs::OsRng;
-use rand::{self, Rng, RngCore};
-use serde_derive::{Deserialize, Serialize};
-use std::{
-    fs::File,
-    io::{self, Read, Write},
-    path::{Path, PathBuf},
-    process::{self, Command},
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use tui::{layout, style, text, widgets};
+use log::info;
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    Terminal,
+};
+use std::{
+    fs::{self, File},
+    io::{self, Read, Write},
+    process::Command,
+};
 use uuid::Uuid;
 
-// Config struct for handling configuration loading and saving
-#[derive(Default, Serialize, Deserialize)]
-struct Config {
-    pin_hash: Option<String>,
-    notes_dir: Option<String>,
-}
-
-impl Config {
-    fn load() -> Self {
-        let config_path = Self::config_file_path();
-        if config_path.exists() {
-            let config_str =
-                std::fs::read_to_string(config_path).expect("Unable to read config file");
-            toml::de::from_str(&config_str).unwrap_or_default()
-        } else {
-            Self {
-                pin_hash: None,
-                notes_dir: None,
-            }
-        }
-    }
-
-    fn save(&self) {
-        let config_str = toml::to_string(self).expect("Failed to serialize config");
-        std::fs::write(Self::config_file_path(), config_str).expect("Unable to write config file");
-    }
-
-    pub fn load_notes_dir() -> Option<String> {
-        let config = Config::load();
-        config.notes_dir
-    }
-
-    fn config_file_path() -> PathBuf {
-        let mut config_path = dirs::config_dir().unwrap();
-        config_path.push("notes-renamer.toml");
-        config_path
-    }
-}
-
-// Struct for managing PIN-related operations
-struct PinManager;
-
-impl PinManager {
-    pub fn ask_for_pin() -> String {
-        println!("Please enter your 6-digit PIN:");
-        let mut pin = String::new();
-        io::stdin().read_line(&mut pin).expect("Failed to read PIN");
-        let pin = pin.trim().to_string();
-        if pin.len() != 6 {
-            println!("PIN must be 6 digits.");
-            process::exit(1);
-        }
-        pin
-    }
-
-    pub fn load_pin_hash() -> Option<String> {
-        let config = Config::load();
-        config.pin_hash
-    }
-
-    pub fn store_pin(pin: &str) {
-        let mut config = Config::load();
-        let salt = rand::thread_rng().gen::<[u8; 16]>();
-        let argon2 = Argon2::default();
-        let salt = Salt::from_b64(&salt).unwrap();
-        let hash = argon2
-            .hash_password(pin.as_bytes(), *&salt)
-            .map(|p| p.to_string())
-            .unwrap();
-        config.pin_hash = Some(hash);
-        config.save();
-    }
-
-    pub fn verify_pin(pin: &str) -> bool {
-        if let Some(stored_hash) = Self::load_pin_hash() {
-            let argon2 = Argon2::default();
-            match argon2.verify_password(pin.as_bytes(), &stored_hash.into()) {
-                Ok(_) => true,
-                Err(_) => false,
-            }
-        } else {
-            false
-        }
-    }
-
-    pub fn derive_key_from_pin(pin: &str, salt: &[u8]) -> Result<Key<Aes256Gcm>> {
-        let argon2 = Argon2::default();
-        let mut key = [0u8; 32];
-
-        argon2
-            .hash_password_into(pin.as_bytes(), salt, &mut key)
-            .map_err(|e| anyhow::anyhow!("Argon2 error: {}", e))?;
-
-        Ok(*Key::<Aes256Gcm>::from_slice(&key))
-    }
-}
-
-// Struct for handling encryption and decryption of notes
-struct NoteManager;
-
-impl NoteManager {
-    pub fn encrypt_note_content(content: &[u8], pin: &str) -> Result<Vec<u8>> {
-        let mut salt = [0u8; 16];
-        OsRng.fill_bytes(&mut salt);
-
-        let key = PinManager::derive_key_from_pin(pin, &salt)?;
-        let cipher = Aes256Gcm::new(&key);
-
-        let mut nonce = [0u8; 12];
-        OsRng.fill_bytes(&mut nonce);
-
-        let ciphertext = cipher
-            .encrypt(Nonce::<Aes256Gcm>::from_slice(&nonce), content)
-            .expect("Encryption failed!");
-
-        Ok([salt.to_vec(), nonce.to_vec(), ciphertext].concat())
-    }
-
-    pub fn decrypt_note_content(encrypted_data: &[u8], pin: &str) -> Result<Vec<u8>> {
-        let (salt, remainder) = encrypted_data.split_at(16);
-        let (nonce, ciphertext) = remainder.split_at(12);
-
-        let key = PinManager::derive_key_from_pin(pin, salt)?;
-        let cipher = Aes256Gcm::new(&key);
-
-        let decrypted = cipher
-            .decrypt(Nonce::<Aes256Gcm>::from_slice(nonce), ciphertext)
-            .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
-
-        Ok(decrypted)
-    }
-}
-
-// Struct for handling notes file operations
 struct FileManager;
 
 impl FileManager {
@@ -169,37 +42,145 @@ impl FileManager {
             .context("Unable to read file")?;
 
         NoteManager::decrypt_note_content(&encrypted_data, pin)
+            .context("Failed to decrypt note content")
     }
 }
 
-// Function to get the UUID as filename
 fn generate_uuid_filename() -> String {
     let id = Uuid::new_v4().to_string();
     format!("{}.enc.txt", id)
 }
 
-// Function to open the note in the default editor
 fn open_in_editor(filename: &str) -> Result<()> {
-    let editor = if let Ok(editor) = std::env::var("EDITOR") {
-        editor
-    } else {
-        "nano".to_string()
-    };
-
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nano".to_string());
     Command::new(editor).arg(filename).spawn()?.wait()?;
     Ok(())
 }
 
-fn main() {
+fn main() -> Result<()> {
     let pin = PinManager::ask_for_pin();
     PinManager::store_pin(&pin);
 
-    let encrypted_note_content =
-        NoteManager::encrypt_note_content(b"My Secret Note", &pin).expect("Encryption failed");
-    let filename = generate_uuid_filename();
-    FileManager::save_note_to_file(&encrypted_note_content, &filename)
-        .expect("Failed to save note");
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-    // Open the note in the default editor
-    open_in_editor(&filename).expect("Failed to open editor");
+    let notes = fs::read_dir(".")?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
+        .collect::<Vec<_>>();
+
+    let mut list_state = ListState::default();
+    let mut selected = 0;
+    list_state.select(Some(selected));
+
+    loop {
+        terminal.draw(|f| {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints(
+                    [
+                        Constraint::Percentage(70),
+                        Constraint::Percentage(20),
+                        Constraint::Min(3),
+                    ]
+                    .as_ref(),
+                )
+                .split(f.area());
+
+            // Notes list
+            let items: Vec<_> = notes
+                .iter()
+                .map(|note| {
+                    let filename = note.file_name().to_string_lossy().to_owned().to_string();
+                    ListItem::new(filename)
+                })
+                .collect();
+            let notes_list = List::new(items)
+                .block(Block::default().borders(Borders::ALL).title("Notes"))
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .highlight_symbol(">> ");
+            f.render_stateful_widget(notes_list, chunks[0], &mut list_state);
+
+            // Note preview
+            let preview = if let Some(selected) = list_state.selected() {
+                if let Some(note) = notes.get(selected) {
+                    let filename = note.path();
+                    match FileManager::load_and_decrypt_note_content(
+                        filename.to_string_lossy().as_ref(),
+                        &pin,
+                    ) {
+                        Ok(content) => String::from_utf8_lossy(&content).to_string(),
+                        Err(_) => "Error reading note.".to_string(),
+                    }
+                } else {
+                    "No note selected.".to_string()
+                }
+            } else {
+                "No note selected.".to_string()
+            };
+            let preview_paragraph = Paragraph::new(preview)
+                .block(Block::default().borders(Borders::ALL).title("Preview"));
+            f.render_widget(preview_paragraph, chunks[1]);
+
+            // Keybinding tips
+            let help_text = Line::from(vec![
+                Span::raw("Up/Down: Navigate  "),
+                Span::raw("Enter: Open in Editor  "),
+                Span::raw("q: Quit"),
+            ]);
+            let help = Paragraph::new(help_text).block(Block::default().borders(Borders::ALL));
+            f.render_widget(help, chunks[2]);
+        })?;
+
+        if let Event::Key(key) = event::read()? {
+            match key.code {
+                KeyCode::Char('q') => break,
+                KeyCode::Down => {
+                    if selected < notes.len().saturating_sub(1) {
+                        selected += 1;
+                        list_state.select(Some(selected));
+                    }
+                }
+                KeyCode::Up => {
+                    if selected > 0 {
+                        selected -= 1;
+                        list_state.select(Some(selected));
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(selected) = list_state.selected() {
+                        if let Some(note) = notes.get(selected) {
+                            let temp_file = format!("temp_{}.txt", Uuid::new_v4());
+                            let decrypted_content = FileManager::load_and_decrypt_note_content(
+                                note.path().to_string_lossy().as_ref(),
+                                &pin,
+                            )?;
+                            FileManager::save_note_to_file(&decrypted_content, &temp_file)?;
+                            open_in_editor(&temp_file)?;
+                            let encrypted_content =
+                                NoteManager::encrypt_note_content(&decrypted_content, &pin)?;
+                            FileManager::save_note_to_file(
+                                &encrypted_content,
+                                note.path().to_string_lossy().as_ref(),
+                            )?;
+                            fs::remove_file(temp_file)?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    Ok(())
 }

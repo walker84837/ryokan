@@ -127,12 +127,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
-name = "base64"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
-
-[[package]]
 name = "base64ct"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -273,6 +267,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "cryptnote"
+version = "0.0.1"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "argon2",
+ "crossterm 0.28.1",
+ "dirs",
+ "env_logger",
+ "log",
+ "rand 0.8.5",
+ "ratatui",
+ "rpassword",
+ "serde",
+ "serde_derive",
+ "tempfile",
+ "thiserror 2.0.11",
+ "toml",
+ "tui",
+ "uuid",
 ]
 
 [[package]]
@@ -631,30 +648,6 @@ dependencies = [
  "log",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "notes-renamer"
-version = "0.0.1"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "argon2",
- "base64",
- "crossterm 0.28.1",
- "dirs",
- "env_logger",
- "log",
- "rand 0.8.5",
- "ratatui",
- "rpassword",
- "serde",
- "serde_derive",
- "tempfile",
- "thiserror 2.0.11",
- "toml",
- "tui",
- "uuid",
 ]
 
 [[package]]

@@ -1,13 +1,25 @@
 [package]
-name = "notes-renamer"
+name = "cryptnote"
 version = "0.0.1"
 edition = "2021"
+categories = ["command-line-utilities"]
+keywords = ["cli", "tui", "command-line"]
+readme = "README.md"
+repository = "https://github.com/walker84837/cryptnote"
+
+[profile.dev]
+debug = false
+
+[profile.release]
+strip = true
+lto = true
+overflow-checks = true
+panic = "abort"
 
 [dependencies]
 aes-gcm = "0.10.3"
 anyhow = "1.0.89"
 argon2 = "0.5.3"
-base64 = "0.22.1"
 crossterm = "0.28.1"
 dirs = "5.0.1"
 env_logger = "0.11.5"

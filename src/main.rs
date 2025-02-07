@@ -1,17 +1,21 @@
+mod args;
 mod config;
 mod file_manager;
 mod note_manager;
 mod pin_manager;
 
 use crate::{
-    config::Config, file_manager::FileManager, note_manager::NoteManager, pin_manager::PinManager,
+    args::Args, config::Config, file_manager::FileManager, note_manager::NoteManager,
+    pin_manager::PinManager,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
+use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use log::LevelFilter;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -24,11 +28,24 @@ use std::{fs, io, path::PathBuf};
 use uuid::Uuid;
 
 fn main() -> Result<()> {
-    let stored_pin_hash = PinManager::load_pin_hash();
-    let pin = if stored_pin_hash.is_some() {
+    let args = Args::parse();
+
+    let mut config = Config::new(&args.config_file);
+
+    let filter_level = match args.verbose_level {
+        0 => LevelFilter::Off,
+        1 => LevelFilter::Info,
+        2 => LevelFilter::Debug,
+        _ => LevelFilter::Warn,
+    };
+
+    initialize_logger(filter_level);
+
+    let stored_pin_hash = PinManager::load_pin_hash(&config);
+    let pin = if stored_pin_hash.is_some() && !stored_pin_hash.unwrap().is_empty() {
         loop {
             let entered_pin = PinManager::ask_for_pin();
-            if PinManager::verify_pin(&entered_pin) {
+            if PinManager::verify_pin(&config, &entered_pin) {
                 break entered_pin;
             } else {
                 println!("Incorrect PIN. Please try again.");
@@ -37,7 +54,7 @@ fn main() -> Result<()> {
     } else {
         println!("No PIN found. Please set a new 6-digit PIN.");
         let new_pin = PinManager::ask_for_pin();
-        PinManager::store_pin(&new_pin);
+        PinManager::store_pin(&mut config, &new_pin);
         new_pin
     };
 
@@ -47,9 +64,7 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let notes_dir = Config::load_notes_dir()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let notes_dir = &config.notes_dir;
     let mut notes = fs::read_dir(&notes_dir)?
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
@@ -58,7 +73,6 @@ fn main() -> Result<()> {
     let mut list_state = ListState::default();
     let mut selected = 0;
     list_state.select(Some(selected));
-
     loop {
         draw_terminal(&mut terminal, &mut notes, &mut list_state, &pin)?;
 
@@ -66,8 +80,7 @@ fn main() -> Result<()> {
             match key.code {
                 KeyCode::Char('q') => break,
                 KeyCode::Char('n') => {
-                    let notes_dir = Config::load_notes_dir().unwrap_or_else(|| ".".to_string());
-                    let notes_dir_path = PathBuf::from(&notes_dir);
+                    let notes_dir_path = PathBuf::from(notes_dir.clone());
                     let filename = FileManager::generate_uuid_filename();
                     let path = notes_dir_path.join(&filename);
                     let encrypted_content = NoteManager::encrypt_note_content(&Vec::new(), &pin)?;
@@ -98,8 +111,10 @@ fn main() -> Result<()> {
                                 note.path().to_string_lossy().as_ref(),
                                 &pin,
                             )?;
-                            FileManager::save_note_to_file(&decrypted_content, &temp_file)?;
-                            FileManager::open_in_editor(&temp_file)?;
+                            FileManager::save_note_to_file(&decrypted_content, &temp_file)
+                                .context("Error saving note to temporary file")?;
+                            FileManager::open_in_editor(&args, temp_file.clone().into())
+                                .context("Error opening note in editor")?;
                             let encrypted_content =
                                 NoteManager::encrypt_note_content(&decrypted_content, &pin)?;
                             FileManager::save_note_to_file(
@@ -192,4 +207,8 @@ fn draw_terminal(
     })?;
 
     Ok(())
+}
+
+fn initialize_logger(filter_level: LevelFilter) {
+    env_logger::builder().filter_level(filter_level).init();
 }

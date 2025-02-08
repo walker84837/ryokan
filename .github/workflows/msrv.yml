@@ -1,0 +1,43 @@
+name: Determine MSRV
+
+on:
+  push:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly (Sunday at midnight)
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  msrv:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v3
+
+    # Install Rust (latest stable version to install cargo-msrv)
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    # Install cargo-msrv
+    - name: Install cargo-msrv
+      run: cargo install cargo-msrv
+
+    # Determine the MSRV
+    - name: Find MSRV
+      run: cargo msrv --output-format json > msrv.json
+
+    # Upload the MSRV as an artifact
+    - name: Upload MSRV
+      uses: actions/upload-artifact@v3
+      with:
+        name: msrv
+        path: msrv.json

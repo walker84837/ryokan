@@ -11,6 +11,7 @@ env:
 
 jobs:
   msrv:
+
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -20,24 +21,23 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    # Install Rust (latest stable version to install cargo-msrv)
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         override: true
 
-    # Install cargo-msrv
     - name: Install cargo-msrv
       run: cargo install cargo-msrv
 
-    # Determine the MSRV
     - name: Find MSRV
       run: cargo msrv --output-format json > msrv.json
 
     # Upload the MSRV as an artifact
     - name: Upload MSRV
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: msrv
         path: msrv.json
+        if-no-files-found: error
+        retention-days: 7

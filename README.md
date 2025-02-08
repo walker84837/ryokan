@@ -42,7 +42,7 @@ CryptNote is a secure, command-line note-taking application written in Rust. It 
   Customize the notes directory and configuration file location via command-line arguments.
 
 - **Open Source:**  
-  Distributed under both the [Apache-2.0](LICENSE-APACHE) and [MIT](LICENSE-MIT) licenses.
+  Distributed under either the [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT) licenses.
 
 ---
 

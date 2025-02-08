@@ -31,7 +31,7 @@ jobs:
       run: cargo install cargo-msrv
 
     - name: Find MSRV
-      run: cargo msrv --output-format json > msrv.json
+      run: cargo msrv find --output-format json > msrv.json
 
     # Upload the MSRV as an artifact
     - name: Upload MSRV

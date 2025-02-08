@@ -1,5 +1,7 @@
 # CryptNote
 
+[![Build and test](https://github.com/walker84837/cryptnote/actions/workflows/build.yml/badge.svg)](https://github.com/walker84837/cryptnote/actions/workflows/build.yml)
+
 CryptNote is a secure, command-line note-taking application written in Rust. It encrypts your notes using AES-256 GCM and protects them with a 6-digit PIN. With a sleek terminal user interface (TUI) and seamless integration with your favorite text editor, CryptNote makes it easy to create, view, and edit encrypted notes—all from the terminal.
 
 ## Table of Contents

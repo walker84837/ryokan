@@ -113,14 +113,23 @@ fn main() -> Result<()> {
                             )?;
                             FileManager::save_note_to_file(&decrypted_content, &temp_file)
                                 .context("Error saving note to temporary file")?;
+
+                            let note_path = note.path().to_string_lossy().into_owned();
+
+                            // Restore terminal to normal mode and main screen before launching editor
+                            control_tui(&mut terminal, false)?;
+
                             FileManager::open_in_editor(&args, temp_file.clone().into())
                                 .context("Error opening note in editor")?;
+
+                            // Re-enable raw mode and alternate screen after editor exits
+                            control_tui(&mut terminal, true)?;
+                            draw_terminal(&mut terminal, &mut notes, &mut list_state, &pin)?;
+
                             let encrypted_content =
                                 NoteManager::encrypt_note_content(&decrypted_content, &pin)?;
-                            FileManager::save_note_to_file(
-                                &encrypted_content,
-                                note.path().to_string_lossy().as_ref(),
-                            )?;
+
+                            FileManager::save_note_to_file(&encrypted_content, &note_path)?;
                             fs::remove_file(temp_file)?;
                         }
                     }
@@ -132,6 +141,20 @@ fn main() -> Result<()> {
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    Ok(())
+}
+
+fn control_tui(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    show_cursor: bool,
+) -> Result<()> {
+    if show_cursor {
+        execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+        terminal.show_cursor()?;
+    } else {
+        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+        terminal.hide_cursor()?;
+    }
     Ok(())
 }
 
@@ -174,7 +197,7 @@ fn draw_terminal(
             .highlight_symbol(">> ");
         f.render_stateful_widget(notes_list, chunks[0], list_state);
 
-        // Note preview
+        // TODO: this should be simplified as soon as Rust Edition 2024 is stabilized
         let preview = if let Some(selected) = list_state.selected() {
             if let Some(note) = notes.get(selected) {
                 let filename = note.path();

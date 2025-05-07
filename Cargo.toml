@@ -18,20 +18,21 @@ panic = "abort"
 
 [dependencies]
 aes-gcm = "0.10.3"
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 argon2 = "0.5.3"
 clap = { version = "4.5.37", features = ["derive"] }
-crossterm = "0.28.1"
+crossterm = "0.29.0"
 dirs = "6.0.0"
-env_logger = "0.11.5"
+env_logger = "0.11.8"
 log = "0.4.27"
 rand = "0.8.5"
 ratatui = "0.29.0"
-rpassword = "7.3.1"
+rpassword = "7.4.0"
 serde = "1.0.219"
 serde_derive = "1.0.210"
-tempfile = "3.18.0"
+serde_json = "1.0.140"
+tempfile = "3.19.1"
 thiserror = "2.0.12"
-toml = "0.8.21"
+toml = "0.8.22"
 tui = "0.19.0"
-uuid = { version = "1.15.1", features = ["v4", "fast-rng"] }
+uuid = { version = "1.16.0", features = ["v4", "fast-rng"] }

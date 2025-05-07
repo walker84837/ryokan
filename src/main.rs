@@ -1,6 +1,7 @@
 mod args;
 mod config;
 mod file_manager;
+mod note_database;
 mod note_manager;
 mod pin_manager;
 
@@ -57,6 +58,7 @@ fn main() -> Result<()> {
         PinManager::store_pin(&mut config, &new_pin);
         new_pin
     };
+    let mut note_database = note_database::NoteDatabase::new(&args.config_file);
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();

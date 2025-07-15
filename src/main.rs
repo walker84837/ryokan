@@ -35,9 +35,9 @@ fn main() -> Result<()> {
 
     let filter_level = match args.verbose_level {
         0 => LevelFilter::Off,
-        1 => LevelFilter::Info,
-        2 => LevelFilter::Debug,
-        _ => LevelFilter::Warn,
+        1 => LevelFilter::Warn,
+        2 => LevelFilter::Info,
+        _ => LevelFilter::Debug,
     };
 
     initialize_logger(filter_level);
@@ -45,20 +45,20 @@ fn main() -> Result<()> {
     let stored_pin_hash = PinManager::load_pin_hash(&config);
     let pin = if stored_pin_hash.is_some() && !stored_pin_hash.unwrap().is_empty() {
         loop {
-            let entered_pin = PinManager::ask_for_pin();
+            let entered_pin = PinManager::ask_for_pin().unwrap();
             if PinManager::verify_pin(&config, &entered_pin) {
                 break entered_pin;
             } else {
-                println!("Incorrect PIN. Please try again.");
+                eprintln!("Incorrect PIN. Please try again.");
             }
         }
     } else {
-        println!("No PIN found. Please set a new 6-digit PIN.");
-        let new_pin = PinManager::ask_for_pin();
+        eprintln!("No PIN found. Please set a new 6-digit PIN.");
+        let new_pin = PinManager::ask_for_pin().unwrap();
         PinManager::store_pin(&mut config, &new_pin);
         new_pin
     };
-    let mut note_database = note_database::NoteDatabase::new(&args.config_file);
+    // let mut note_database = note_database::NoteDatabase::new(&args.config_file);
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -69,6 +69,7 @@ fn main() -> Result<()> {
     let notes_dir = &config.notes_dir;
     let mut notes = fs::read_dir(&notes_dir)?
         .filter_map(|entry| entry.ok())
+        // TODO: take the ones that don't match and convert them
         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
         .collect::<Vec<_>>();
 
@@ -87,7 +88,7 @@ fn main() -> Result<()> {
                     let path = notes_dir_path.join(&filename);
                     let encrypted_content = NoteManager::encrypt_note_content(&Vec::new(), &pin)?;
                     FileManager::save_note_to_file(&encrypted_content, &path.to_string_lossy())?;
-                    // Reload notes list
+
                     notes = fs::read_dir(notes_dir_path)?
                         .filter_map(|entry| entry.ok())
                         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
@@ -106,34 +107,35 @@ fn main() -> Result<()> {
                     }
                 }
                 KeyCode::Enter => {
-                    if let Some(selected) = list_state.selected() {
-                        if let Some(note) = notes.get(selected) {
-                            let temp_file = format!("temp_{}.txt", Uuid::new_v4());
-                            let decrypted_content = FileManager::load_and_decrypt_note_content(
-                                note.path().to_string_lossy().as_ref(),
-                                &pin,
-                            )?;
-                            FileManager::save_note_to_file(&decrypted_content, &temp_file)
-                                .context("Error saving note to temporary file")?;
+                    // TODO: move to separate function
+                    if let Some(selected) = list_state.selected()
+                        && let Some(note) = notes.get(selected)
+                    {
+                        let temp_file = format!("temp_{}.txt", Uuid::new_v4());
+                        let decrypted_content = FileManager::load_and_decrypt_note_content(
+                            note.path().to_string_lossy().as_ref(),
+                            &pin,
+                        )?;
+                        FileManager::save_note_to_file(&decrypted_content, &temp_file)
+                            .context("Error saving note to temporary file")?;
 
-                            let note_path = note.path().to_string_lossy().into_owned();
+                        let note_path = note.path().to_string_lossy().into_owned();
 
-                            // Restore terminal to normal mode and main screen before launching editor
-                            control_tui(&mut terminal, false)?;
+                        // restore terminal to normal mode and main screen before launching editor
+                        control_tui(&mut terminal, false)?;
 
-                            FileManager::open_in_editor(&args, temp_file.clone().into())
-                                .context("Error opening note in editor")?;
+                        FileManager::open_in_editor(&args, temp_file.clone().into())
+                            .context("Error opening note in editor")?;
 
-                            // Re-enable raw mode and alternate screen after editor exits
-                            control_tui(&mut terminal, true)?;
-                            draw_terminal(&mut terminal, &mut notes, &mut list_state, &pin)?;
+                        // re-enable raw mode and alternate screen after editor exits
+                        control_tui(&mut terminal, true)?;
+                        draw_terminal(&mut terminal, &mut notes, &mut list_state, &pin)?;
 
-                            let encrypted_content =
-                                NoteManager::encrypt_note_content(&decrypted_content, &pin)?;
+                        let encrypted_content =
+                            NoteManager::encrypt_note_content(&decrypted_content, &pin)?;
 
-                            FileManager::save_note_to_file(&encrypted_content, &note_path)?;
-                            fs::remove_file(temp_file)?;
-                        }
+                        FileManager::save_note_to_file(&encrypted_content, &note_path)?;
+                        fs::remove_file(temp_file)?;
                     }
                 }
                 _ => {}
@@ -181,7 +183,6 @@ fn draw_terminal(
             )
             .split(f.area());
 
-        // Notes list
         let items: Vec<_> = notes
             .iter()
             .map(|note| {
@@ -199,28 +200,25 @@ fn draw_terminal(
             .highlight_symbol(">> ");
         f.render_stateful_widget(notes_list, chunks[0], list_state);
 
-        // TODO: this should be simplified as soon as Rust Edition 2024 is stabilized
-        let preview = if let Some(selected) = list_state.selected() {
-            if let Some(note) = notes.get(selected) {
-                let filename = note.path();
-                match FileManager::load_and_decrypt_note_content(
-                    filename.to_string_lossy().as_ref(),
-                    pin,
-                ) {
-                    Ok(content) => String::from_utf8_lossy(&content).to_string(),
-                    Err(_) => "Error reading note.".to_string(),
-                }
-            } else {
-                "No note selected.".to_string()
+        let preview = if let Some(selected) = list_state.selected()
+            && let Some(note) = notes.get(selected)
+        {
+            let filename = note.path();
+            match FileManager::load_and_decrypt_note_content(
+                filename.to_string_lossy().as_ref(),
+                pin,
+            ) {
+                Ok(content) => String::from_utf8_lossy(&content).to_string(),
+                Err(_) => "Error reading note.".to_string(),
             }
         } else {
             "No note selected.".to_string()
         };
+
         let preview_paragraph =
             Paragraph::new(preview).block(Block::default().borders(Borders::ALL).title("Preview"));
         f.render_widget(preview_paragraph, chunks[1]);
 
-        // Keybinding tips
         let help_text = Line::from(vec![
             Span::raw("Up/Down: Navigate  "),
             Span::raw("Enter: Open/Edit  "),

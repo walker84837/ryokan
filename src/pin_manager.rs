@@ -15,16 +15,16 @@ pub enum PinManagerError {
 pub struct PinManager;
 
 impl PinManager {
-    pub fn ask_for_pin() -> String {
+    pub fn ask_for_pin() -> Option<String> {
         println!("Please enter your 6-digit PIN:");
         let mut pin = String::new();
         io::stdin().read_line(&mut pin).expect("Failed to read PIN");
         let pin = pin.trim().to_string();
         if pin.len() != 6 {
             println!("PIN must be 6 digits.");
-            process::exit(1);
+            return None;
         }
-        pin
+        Some(pin)
     }
 
     pub fn load_pin_hash(config: &Config) -> Option<String> {

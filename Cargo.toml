@@ -18,7 +18,7 @@ panic = "abort"
 
 [dependencies]
 aes-gcm = "0.10.3"
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 argon2 = "0.5.3"
 crossterm = "0.29.0"
 clap = { version = "4.5.42", features = ["derive"] }

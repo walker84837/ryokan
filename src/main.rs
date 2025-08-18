@@ -5,22 +5,22 @@ mod note;
 mod note_database;
 mod pin;
 
-use crate::{args::Args, config::Config, file::File};
+use crate::{args::Args, config::Config};
 use anyhow::{Context, Result};
 use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use log::LevelFilter;
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
-    Terminal,
 };
 use std::{
     fs, io,
@@ -121,20 +121,14 @@ fn main() -> Result<()> {
                         && let Some(note) = notes.get(selected)
                     {
                         let temp_file = format!("temp_{}.txt", Uuid::new_v4());
-                        let decrypted_content = File::load_and_decrypt_note_content(
-                            note.path().to_string_lossy().as_ref(),
-                            &pin,
-                        )?;
-                        File::save_note_to_file(&decrypted_content, &temp_file)
-                            .context("Error saving note to temporary file")?;
-
                         let note_path = note.path().to_string_lossy().into_owned();
+                        let decrypted_content =
+                            file::load_and_decrypt_note_content(&note_path, &pin)?;
+                        file::save_note_to_file(&decrypted_content, &temp_file)
+                            .context("Error saving note to temporary file")?;
 
                         // restore terminal to normal mode and main screen before launching editor
                         control_tui(&mut terminal, false)?;
-
-                        File::open_in_editor(&args, temp_file.clone().into())
-                            .context("Error opening note in editor")?;
 
                         // re-enable raw mode and alternate screen after editor exits
                         control_tui(&mut terminal, true)?;
@@ -143,7 +137,7 @@ fn main() -> Result<()> {
                         let encrypted_content =
                             note::encrypt_note_content(&decrypted_content, &pin)?;
 
-                        File::save_note_to_file(&encrypted_content, &note_path)?;
+                        file::save_note_to_file(&encrypted_content, &note_path)?;
                         fs::remove_file(temp_file)?;
                     }
                 }
@@ -213,7 +207,7 @@ fn draw_terminal(
             && let Some(note) = notes.get(selected)
         {
             let filename = note.path();
-            match File::load_and_decrypt_note_content(filename.to_string_lossy().as_ref(), pin) {
+            match file::load_and_decrypt_note_content(filename.to_string_lossy().as_ref(), pin) {
                 Ok(content) => String::from_utf8_lossy(&content).to_string(),
                 Err(_) => "Error reading note.".to_string(),
             }
@@ -250,7 +244,7 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
 
     let mut unencrypted_files = Vec::new();
 
-    for entry in fs::read_dir(notes_dir)? {
+    for entry in fs::read_dir(&notes_dir)? {
         let entry = entry?;
         let path = entry.path();
 
@@ -262,7 +256,7 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
                 .ends_with(".enc.txt")
         {
             // try to decrypt to check if it's an encrypted file that just doesn't have the .enc.txt extension
-            match File::load_and_decrypt_note_content(path.to_string_lossy().as_ref(), pin) {
+            match file::load_and_decrypt_note_content(path.to_string_lossy().as_ref(), pin) {
                 Ok(_) => {
                     // it's an encrypted file, but without the correct extension, so rename it
                     let new_path = path.with_extension("enc.txt");
@@ -288,9 +282,9 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
             println!("Encrypting {:?}...", file_path);
             let content = fs::read(&file_path)?;
             let encrypted_content = note::encrypt_note_content(&content, pin)?;
-            let new_filename = File::generate_uuid_filename();
-            let new_path = notes_dir.join(new_filename);
-            File::save_note_to_file(&encrypted_content, &new_path.to_string_lossy())?;
+            let new_filename = file::generate_uuid_filename();
+            let new_path = notes_dir.as_ref().join(new_filename);
+            file::save_note_to_file(&encrypted_content, &new_path.to_string_lossy())?;
             fs::remove_file(&file_path)?;
             println!("Encrypted {:?} to {:?}", file_path, new_path);
         }

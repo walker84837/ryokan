@@ -16,6 +16,6 @@ pub struct Args {
     #[clap(short, long)]
     pub editor: Option<String>,
 
-    #[clap(short, long, action = ArgAction::Count)]
+    #[clap(short, long, action = ArgAction::Count, default_value_t = 1)]
     pub verbose_level: u8,
 }

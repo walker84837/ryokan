@@ -35,7 +35,7 @@ impl NoteDatabase {
             Some(p) => p.clone(),
             None => Self::default_config_dir(),
         };
-        path.pop(); // Remove config file name
+        path.pop(); // remove config file name
         path.push("note_database.json");
         path
     }

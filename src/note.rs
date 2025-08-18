@@ -1,9 +1,9 @@
 use crate::pin;
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit},
     Aes256Gcm,
+    aead::{Aead, AeadCore, KeyInit},
 };
-use rand::{self, rngs::OsRng, RngCore};
+use rand::{self, RngCore, rngs::OsRng};
 use thiserror::Error;
 
 #[derive(Error, Debug)]

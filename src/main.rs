@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+#![warn(clippy::unwrap_used)]
+
 mod args;
 mod config;
 mod file;
@@ -5,12 +8,13 @@ mod note;
 mod note_database;
 mod pin;
 
-use crate::{args::Args, config::Config};
+use crate::{args::Args, config::Config, note_database::NoteDatabase};
 use anyhow::Result;
 use clap::Parser;
 mod tui;
 
 use log::LevelFilter;
+use log::info;
 use std::{fs, path::Path};
 
 fn main() -> Result<()> {
@@ -33,9 +37,8 @@ fn main() -> Result<()> {
             let entered_pin = pin::ask_for_pin().unwrap();
             if pin::verify_pin(&config, &entered_pin) {
                 break entered_pin;
-            } else {
-                eprintln!("Incorrect PIN. Please try again.");
             }
+            eprintln!("Incorrect PIN. Please try again.");
         }
     } else {
         eprintln!("No PIN found. Please set a new 6-digit PIN.");
@@ -52,21 +55,23 @@ fn main() -> Result<()> {
         None => {}
     }
 
-    let mut note_database = note_database::NoteDatabase::new(&args.config_file);
+    let mut note_database = NoteDatabase::from_config(args.config_file.clone())
+        .expect("FIXME: handle this in some way");
 
     tui::run_tui(&mut config, &pin, &mut note_database, &args)?;
 
     Ok(())
 }
 
+#[inline(always)]
 fn initialize_logger(filter_level: LevelFilter) {
     env_logger::builder().filter_level(filter_level).init();
 }
 
 fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<()> {
-    println!(
-        "Scanning for unencrypted files in {:?}...",
-        notes_dir.as_ref()
+    info!(
+        "Scanning for unencrypted files in {}...",
+        notes_dir.as_ref().display()
     );
 
     let mut unencrypted_files = Vec::new();
@@ -87,7 +92,11 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
                 Ok(_) => {
                     // rename it: it's an encrypted file, but without the correct extension
                     let new_path = path.with_extension("enc.txt");
-                    println!("Renaming encrypted file: {:?} -> {:?}", path, new_path);
+                    info!(
+                        "Renaming encrypted file: {} -> {}",
+                        path.display(),
+                        new_path.display()
+                    );
                     fs::rename(&path, &new_path)?;
                 }
                 Err(_) => {
@@ -99,24 +108,28 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
     }
 
     if !unencrypted_files.is_empty() {
-        println!(
+        info!(
             "Found {} unencrypted files. Encrypting...",
             unencrypted_files.len()
         );
         for file_path in unencrypted_files {
-            println!("Encrypting {:?}...", file_path);
+            info!("Encrypting {}...", file_path.display());
             let content = fs::read(&file_path)?;
             let encrypted_content = note::encrypt_note_content(&content, pin)?;
             let new_filename = file::generate_uuid_filename();
             let new_path = notes_dir.as_ref().join(new_filename);
             file::save_note_to_file(&encrypted_content, &new_path.to_string_lossy())?;
             fs::remove_file(&file_path)?;
-            println!("Encrypted {:?} to {:?}", file_path, new_path);
+            info!(
+                "Encrypted {} to {}",
+                file_path.display(),
+                new_path.display()
+            );
         }
-        println!("Encryption complete.");
+        info!("Encryption complete.");
         return Ok(());
     }
 
-    println!("No unencrypted files found.");
+    info!("No unencrypted files found.");
     Ok(())
 }

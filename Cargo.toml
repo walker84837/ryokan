@@ -1,11 +1,11 @@
 [package]
-name = "cryptnote"
+name = "ryokan"
 version = "0.0.1"
 edition = "2024"
 categories = ["command-line-utilities"]
 keywords = ["cli", "tui", "command-line"]
 readme = "README.md"
-repository = "https://github.com/walker84837/cryptnote"
+repository = "https://github.com/walker84837/ryokan"
 
 [profile.dev]
 debug = false

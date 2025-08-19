@@ -337,31 +337,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cryptnote"
-version = "0.0.1"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "argon2",
- "clap",
- "crossterm 0.29.0",
- "dirs",
- "env_logger",
- "log",
- "rand 0.8.5",
- "ratatui",
- "rpassword",
- "serde",
- "serde_derive",
- "serde_json",
- "tempfile",
- "thiserror",
- "toml",
- "tui",
- "uuid",
-]
-
-[[package]]
 name = "crypto-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1094,6 +1069,31 @@ name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
+
+[[package]]
+name = "ryokan"
+version = "0.0.1"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "argon2",
+ "clap",
+ "crossterm 0.29.0",
+ "dirs",
+ "env_logger",
+ "log",
+ "rand 0.8.5",
+ "ratatui",
+ "rpassword",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "tui",
+ "uuid",
+]
 
 [[package]]
 name = "ryu"

@@ -46,8 +46,8 @@ pub fn run_tui(
     let mut terminal = Terminal::new(backend)?;
 
     let notes_dir = &config.notes_dir;
-    let mut notes = fs::read_dir(&notes_dir)?
-        .filter_map(|entry| entry.ok())
+    let mut notes = fs::read_dir(notes_dir)?
+        .filter_map(std::result::Result::ok)
         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
         .collect::<Vec<_>>();
 
@@ -68,11 +68,11 @@ pub fn run_tui(
                     file::save_note_to_file(&encrypted_content, &path.to_string_lossy())?;
 
                     // Extract UUID from filename and insert into note_database
-                    let uuid = filename.split(".").next().unwrap_or("").to_string();
+                    let uuid = filename.split('.').next().unwrap_or("").to_string();
                     note_database.insert(uuid, filename.clone());
 
                     notes = fs::read_dir(notes_dir_path)?
-                        .filter_map(|entry| entry.ok())
+                        .filter_map(std::result::Result::ok)
                         .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
                         .collect();
                 }
@@ -119,7 +119,7 @@ pub fn run_tui(
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    note_database.save(&args.config_file)?;
+    note_database.save()?;
     Ok(())
 }
 

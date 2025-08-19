@@ -6,6 +6,8 @@ use log::{info, warn};
 use std::io;
 use thiserror::Error;
 
+const MAX_PIN_LENGTH: usize = 6;
+
 #[derive(Error, Debug)]
 pub enum PinError {
     #[error("Key derivation failed: {0}")]
@@ -15,9 +17,12 @@ pub enum PinError {
 pub fn ask_for_pin() -> Option<String> {
     println!("Please enter your 6-digit PIN:");
     let mut pin = String::new();
-    io::stdin().read_line(&mut pin).expect("Failed to read PIN");
-    let pin = pin.trim().to_string();
-    if pin.len() != 6 {
+    io::stdin()
+        .read_line(&mut pin)
+        .inspect_err(|e| eprintln!("Failed to receive input: {e}"))
+        .ok()?;
+
+    if pin.trim().len() != MAX_PIN_LENGTH {
         println!("PIN must be 6 digits.");
         return None;
     }
@@ -26,10 +31,7 @@ pub fn ask_for_pin() -> Option<String> {
 
 pub fn load_pin_hash(config: &Config) -> Option<String> {
     let pin_hash = &config.pin_hash;
-    match pin_hash.is_empty() {
-        true => None,
-        false => Some(pin_hash.to_string()),
-    }
+    if pin_hash.is_empty() { None } else { Some(pin_hash.to_string()) }
 }
 
 pub fn store_pin(config: &mut Config, pin: &str) {

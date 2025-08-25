@@ -1,11 +1,11 @@
 [package]
-name = "cryptnote"
+name = "ryokan"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 categories = ["command-line-utilities"]
 keywords = ["cli", "tui", "command-line"]
 readme = "README.md"
-repository = "https://github.com/walker84837/cryptnote"
+repository = "https://github.com/walker84837/ryokan"
 
 [profile.dev]
 debug = false
@@ -18,10 +18,10 @@ panic = "abort"
 
 [dependencies]
 aes-gcm = "0.10.3"
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 argon2 = "0.5.3"
 crossterm = "0.29.0"
-clap = { version = "4.5.42", features = ["derive"] }
+clap = { version = "4.5.45", features = ["derive"] }
 dirs = "6.0.0"
 env_logger = "0.11.8"
 log = "0.4.27"
@@ -30,8 +30,9 @@ ratatui = "0.29.0"
 rpassword = "7.4.0"
 serde = "1.0.219"
 serde_derive = "1.0.210"
-tempfile = "3.20.0"
-thiserror = "2.0.12"
+tempfile = "3.21.0"
+thiserror = "2.0.15"
 toml = "0.9.5"
+serde_json = "1.0.140"
 tui = "0.19.0"
-uuid = { version = "1.17.0", features = ["v4", "fast-rng"] }
+uuid = { version = "1.18.0", features = ["v4", "fast-rng"] }

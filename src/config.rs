@@ -15,7 +15,7 @@ impl Default for Config {
     fn default() -> Self {
         fs::create_dir_all(NOTES_FOLDER).unwrap();
         Self {
-            pin_hash: "".to_string(),
+            pin_hash: String::new(),
             notes_dir: NOTES_FOLDER.to_string(),
         }
     }

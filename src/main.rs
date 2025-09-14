@@ -29,7 +29,7 @@ fn main() -> Result<()> {
         _ => LevelFilter::Debug,
     };
 
-    initialize_logger(filter_level);
+    env_logger::builder().filter_level(filter_level).init();
 
     let stored_pin_hash = pin::load_pin_hash(&config);
     let pin = if stored_pin_hash.is_some() && !stored_pin_hash.unwrap().is_empty() {
@@ -55,17 +55,13 @@ fn main() -> Result<()> {
         None => {}
     }
 
-    let mut note_database = NoteDatabase::from_config(args.config_file.clone())
+    let note_database = NoteDatabase::from_config(args.config_file.clone())
         .expect("FIXME: handle this in some way");
 
-    tui::run_tui(&mut config, &pin, &mut note_database, &args)?;
+    let mut context = tui::RyokanContext::new(config, &pin, note_database, args);
+    context.run_tui()?;
 
     Ok(())
-}
-
-#[inline(always)]
-fn initialize_logger(filter_level: LevelFilter) {
-    env_logger::builder().filter_level(filter_level).init();
 }
 
 fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<()> {

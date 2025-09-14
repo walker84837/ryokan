@@ -17,7 +17,7 @@ pub enum NoteDatabaseError {
     DatabaseError(&'static str),
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct NoteDatabase {
     /// Maps UUID to original filename
     map: HashMap<String, String>,

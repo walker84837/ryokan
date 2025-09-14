@@ -5,7 +5,7 @@ use thiserror::Error;
 
 const NOTES_FOLDER: &str = "notes";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub pin_hash: String,
     pub notes_dir: String,

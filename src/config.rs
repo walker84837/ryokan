@@ -5,7 +5,7 @@ use thiserror::Error;
 
 const NOTES_FOLDER: &str = "notes";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub pin_hash: String,
     pub notes_dir: String,
@@ -15,7 +15,7 @@ impl Default for Config {
     fn default() -> Self {
         fs::create_dir_all(NOTES_FOLDER).unwrap();
         Self {
-            pin_hash: "".to_string(),
+            pin_hash: String::new(),
             notes_dir: NOTES_FOLDER.to_string(),
         }
     }

@@ -22,8 +22,6 @@ pub enum AppError {
     NoteDatabase(String),
     #[error("TUI error: {0}")]
     Tui(String),
-    #[error("Anyhow error: {0}")]
-    Anyhow(#[from] anyhow::Error),
     #[error("Serde JSON error: {0}")]
     SerdeJson(#[from] serde_json::Error),
     #[error("TOML deserialize error: {0}")]

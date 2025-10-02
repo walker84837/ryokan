@@ -1,24 +1,12 @@
+use crate::error::AppError;
 use crate::pin;
 use aes_gcm::{
     Aes256Gcm,
     aead::{Aead, AeadCore, KeyInit},
 };
 use rand::{self, RngCore, rngs::OsRng};
-use thiserror::Error;
 
-#[derive(Error, Debug)]
-pub enum NoteManagerError {
-    #[error("Encryption failed: {0}")]
-    EncryptionFailed(aes_gcm::Error),
-    #[error("Decryption failed: {0}")]
-    DecryptionFailed(aes_gcm::Error),
-    #[error("Key derivation failed: {0}")]
-    KeyDerivationFailed(#[from] pin::PinError),
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
-}
-
-pub fn encrypt_note_content(content: &[u8], pin: &str) -> Result<Vec<u8>, NoteManagerError> {
+pub fn encrypt_note_content(content: &[u8], pin: &str) -> Result<Vec<u8>, AppError> {
     let mut salt = [0u8; 16];
     OsRng.fill_bytes(&mut salt);
 
@@ -29,12 +17,12 @@ pub fn encrypt_note_content(content: &[u8], pin: &str) -> Result<Vec<u8>, NoteMa
 
     let ciphertext = cipher
         .encrypt(&nonce, content)
-        .map_err(NoteManagerError::EncryptionFailed)?;
+        .map_err(|e| AppError::Encryption(format!("Encryption failed: {}", e)))?;
 
     Ok([salt.as_slice(), nonce.as_slice(), &ciphertext].concat())
 }
 
-pub fn decrypt_note_content(encrypted_data: &[u8], pin: &str) -> Result<Vec<u8>, NoteManagerError> {
+pub fn decrypt_note_content(encrypted_data: &[u8], pin: &str) -> Result<Vec<u8>, AppError> {
     let (salt, remainder) = encrypted_data.split_at(16);
     let (nonce_slice, ciphertext) = remainder.split_at(12);
 
@@ -45,7 +33,7 @@ pub fn decrypt_note_content(encrypted_data: &[u8], pin: &str) -> Result<Vec<u8>,
 
     let decrypted = cipher
         .decrypt(nonce, ciphertext)
-        .map_err(NoteManagerError::DecryptionFailed)?;
+        .map_err(|e| AppError::Decryption(format!("Decryption failed: {}", e)))?;
 
     Ok(decrypted)
 }

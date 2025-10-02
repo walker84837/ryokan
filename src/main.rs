@@ -9,18 +9,19 @@ mod note_database;
 mod pin;
 
 use crate::{args::Args, config::Config, note_database::NoteDatabase};
-use anyhow::Result;
 use clap::Parser;
+mod error;
 mod tui;
 
+use crate::error::AppError;
 use log::LevelFilter;
 use log::info;
 use std::{fs, path::Path};
 
-fn main() -> Result<()> {
+fn main() -> Result<(), AppError> {
     let args = Args::parse();
 
-    let mut config = Config::new(&args.config_file);
+    let mut config = Config::new(&args.config_file)?;
 
     let filter_level = match args.verbose_level {
         0 => LevelFilter::Off,
@@ -31,19 +32,26 @@ fn main() -> Result<()> {
 
     env_logger::builder().filter_level(filter_level).init();
 
-    let stored_pin_hash = pin::load_pin_hash(&config);
-    let pin = if stored_pin_hash.is_some() && !stored_pin_hash.unwrap().is_empty() {
-        loop {
-            let entered_pin = pin::ask_for_pin().unwrap();
-            if pin::verify_pin(&config, &entered_pin) {
-                break entered_pin;
+    let stored_pin_hash = pin::load_pin_hash(&config)?;
+    let pin = if let Some(hash) = stored_pin_hash {
+        if !hash.is_empty() {
+            loop {
+                let entered_pin = pin::ask_for_pin()?;
+                if pin::verify_pin(&config, &entered_pin)? {
+                    break entered_pin;
+                }
+                eprintln!("Incorrect PIN. Please try again.");
             }
-            eprintln!("Incorrect PIN. Please try again.");
+        } else {
+            eprintln!("No PIN found. Please set a new 6-digit PIN.");
+            let new_pin = pin::ask_for_pin()?;
+            pin::store_pin(&mut config, &new_pin)?;
+            new_pin
         }
     } else {
         eprintln!("No PIN found. Please set a new 6-digit PIN.");
-        let new_pin = pin::ask_for_pin().unwrap();
-        pin::store_pin(&mut config, &new_pin);
+        let new_pin = pin::ask_for_pin()?;
+        pin::store_pin(&mut config, &new_pin)?;
         new_pin
     };
 
@@ -55,16 +63,15 @@ fn main() -> Result<()> {
         None => {}
     }
 
-    let note_database = NoteDatabase::from_config(args.config_file.clone())
-        .expect("FIXME: handle this in some way");
+    let note_database = NoteDatabase::from_config(args.config_file.clone())?;
 
-    let mut context = tui::RyokanContext::new(config, &pin, note_database, args);
-    context.run_tui()?;
+    let mut app = tui::App::new(config, pin, note_database, args)?;
+    app.run()?;
 
     Ok(())
 }
 
-fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<()> {
+fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(), AppError> {
     info!(
         "Scanning for unencrypted files in {}...",
         notes_dir.as_ref().display()

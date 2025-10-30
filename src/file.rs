@@ -7,9 +7,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use uuid::Uuid;
 
+pub const MAGIC_BYTES: &[u8] = b"RYOKAN_ENCRYPTED";
+
 /// Saves a note to a file in encrypted format with the given content
 pub fn save_note_to_file(content: &[u8], filename: &str) -> Result<(), AppError> {
     let mut file = File::create(filename).map_err(AppError::Io)?;
+    file.write_all(MAGIC_BYTES).map_err(AppError::Io)?;
     file.write_all(content).map_err(AppError::Io)?;
     info!("Note saved to {filename}");
     Ok(())
@@ -22,13 +25,21 @@ pub fn load_and_decrypt_note_content(filename: &str, pin: &str) -> Result<Vec<u8
     file.read_to_end(&mut encrypted_data)
         .map_err(AppError::Io)?;
 
-    note::decrypt_note_content(&encrypted_data, pin)
+    if encrypted_data.starts_with(MAGIC_BYTES) {
+        let content_without_magic = &encrypted_data[MAGIC_BYTES.len()..];
+        note::decrypt_note_content(content_without_magic, pin)
+    } else {
+        // If no magic bytes, assume it's an unencrypted file for now, or malformed encrypted file
+        // This will be handled more robustly in encrypt_unencrypted_files
+        Err(AppError::Decryption(
+            "File does not contain Ryokan magic bytes.".to_string(),
+        ))
+    }
 }
 
-/// Generates a UUID filename for a new note in the format of "UUID.enc.txt"
-pub fn generate_uuid_filename() -> String {
-    let id = Uuid::new_v4().to_string();
-    format!("{id}.enc.txt")
+/// Generates a UUID for a new note
+pub fn generate_uuid() -> String {
+    Uuid::new_v4().to_string()
 }
 
 /// Opens the file in the default text editor

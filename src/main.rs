@@ -4,16 +4,18 @@
 mod args;
 mod config;
 mod file;
+mod metadata;
 mod note;
-mod note_database;
 mod pin;
 
-use crate::{args::Args, config::Config, note_database::NoteDatabase};
+use crate::{args::Args, config::Config};
 use clap::Parser;
 mod error;
 mod tui;
 
 use crate::error::AppError;
+use crate::file::MAGIC_BYTES;
+use crate::metadata::NoteMetadata;
 use log::LevelFilter;
 use log::info;
 use std::{fs, path::Path};
@@ -22,6 +24,7 @@ fn main() -> Result<(), AppError> {
     let args = Args::parse();
 
     let mut config = Config::new(&args.config_file)?;
+    fs::create_dir_all(&config.notes_dir).map_err(AppError::Io)?;
 
     let filter_level = match args.verbose_level {
         0 => LevelFilter::Off,
@@ -32,28 +35,7 @@ fn main() -> Result<(), AppError> {
 
     env_logger::builder().filter_level(filter_level).init();
 
-    let stored_pin_hash = pin::load_pin_hash(&config)?;
-    let pin = if let Some(hash) = stored_pin_hash {
-        if !hash.is_empty() {
-            loop {
-                let entered_pin = pin::ask_for_pin()?;
-                if pin::verify_pin(&config, &entered_pin)? {
-                    break entered_pin;
-                }
-                eprintln!("Incorrect PIN. Please try again.");
-            }
-        } else {
-            eprintln!("No PIN found. Please set a new 6-digit PIN.");
-            let new_pin = pin::ask_for_pin()?;
-            pin::store_pin(&mut config, &new_pin)?;
-            new_pin
-        }
-    } else {
-        eprintln!("No PIN found. Please set a new 6-digit PIN.");
-        let new_pin = pin::ask_for_pin()?;
-        pin::store_pin(&mut config, &new_pin)?;
-        new_pin
-    };
+    let pin = pin::handle_pin_setup_and_verification(&mut config)?;
 
     match args.command {
         Some(args::Subcommands::EncryptUnencrypted) => {
@@ -63,9 +45,7 @@ fn main() -> Result<(), AppError> {
         None => {}
     }
 
-    let note_database = NoteDatabase::from_config(args.config_file.clone())?;
-
-    let mut app = tui::App::new(config, pin, note_database, args)?;
+    let mut app = tui::App::new(config, pin, args)?;
     app.run()?;
 
     Ok(())
@@ -83,17 +63,17 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
         let entry = entry?;
         let path = entry.path();
 
-        if path.is_file()
-            && !path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .ends_with(".enc.txt")
-        {
-            // try to decrypt to check if it's an encrypted file that just doesn't have the .enc.txt extension
-            match file::load_and_decrypt_note_content(path.to_string_lossy().as_ref(), pin) {
-                Ok(_) => {
-                    // rename it: it's an encrypted file, but without the correct extension
+        if path.is_file() {
+            let file_content = fs::read(&path)?;
+            if file_content.starts_with(MAGIC_BYTES) {
+                // It's an encrypted file
+                if !path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .ends_with(".enc.txt")
+                {
+                    // Rename it: it's an encrypted file, but without the correct extension
                     let new_path = path.with_extension("enc.txt");
                     info!(
                         "Renaming encrypted file: {} -> {}",
@@ -102,10 +82,9 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
                     );
                     fs::rename(&path, &new_path)?;
                 }
-                Err(_) => {
-                    // it's truly unencrypted or corrupted, so add to list
-                    unencrypted_files.push(path);
-                }
+            } else {
+                // It's truly unencrypted, so add to list
+                unencrypted_files.push(path);
             }
         }
     }
@@ -119,14 +98,26 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
             info!("Encrypting {}...", file_path.display());
             let content = fs::read(&file_path)?;
             let encrypted_content = note::encrypt_note_content(&content, pin)?;
-            let new_filename = file::generate_uuid_filename();
-            let new_path = notes_dir.as_ref().join(new_filename);
-            file::save_note_to_file(&encrypted_content, &new_path.to_string_lossy())?;
+
+            let original_filename = file_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let metadata = NoteMetadata::new(original_filename);
+
+            let uuid = file::generate_uuid();
+            let encrypted_note_path = notes_dir.as_ref().join(format!("{}.enc.txt", uuid));
+            let metadata_path = notes_dir.as_ref().join(format!("{}.meta.toml", uuid));
+
+            file::save_note_to_file(&encrypted_content, &encrypted_note_path.to_string_lossy())?;
+            metadata.save(&metadata_path)?;
+
             fs::remove_file(&file_path)?;
             info!(
                 "Encrypted {} to {}",
                 file_path.display(),
-                new_path.display()
+                encrypted_note_path.display()
             );
         }
         info!("Encryption complete.");

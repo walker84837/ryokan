@@ -16,16 +16,21 @@ pub enum AppError {
     Pin(String),
     #[error("PIN hash error: {0}")]
     PinHash(String),
-    #[error("PIN verification error: {0}")]
-    PinVerification(String),
-    #[error("Note database error: {0}")]
-    NoteDatabase(String),
     #[error("TUI error: {0}")]
     Tui(String),
+
     #[error("Serde JSON error: {0}")]
     SerdeJson(#[from] serde_json::Error),
     #[error("TOML deserialize error: {0}")]
     TomlDeserialize(#[from] toml::de::Error),
     #[error("TOML serialize error: {0}")]
     TomlSerialize(#[from] toml::ser::Error),
+    #[error("Metadata error: {0}")]
+    Metadata(String),
+}
+
+impl From<Box<dyn std::error::Error>> for AppError {
+    fn from(err: Box<dyn std::error::Error>) -> Self {
+        AppError::Metadata(err.to_string())
+    }
 }

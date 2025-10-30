@@ -21,25 +21,50 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn new(config_path: &Option<PathBuf>) -> Result<Config, AppError> {
-        let path = match config_path.to_owned() {
+    pub fn new(config_path_param: &Option<PathBuf>) -> Result<Config, AppError> {
+        let config_file_path = match config_path_param.to_owned() {
             Some(p) => p,
             None => Self::config_file_path()?,
         };
 
-        if !path.exists() {
-            fs::create_dir_all(NOTES_FOLDER).map_err(AppError::Io)?;
-            return Ok(Config::default());
-        }
-        match std::fs::read_to_string(&path) {
-            Ok(config_str) => Self::parse_config(config_str),
-            Err(e) => {
-                error!("Error while reading the configuration: {e}");
-                warn!("Using default configuration");
-                fs::create_dir_all(NOTES_FOLDER).map_err(AppError::Io)?;
-                Ok(Config::default())
+        // Ensure the parent directory for the config file exists
+        std::fs::create_dir_all(
+            config_file_path
+                .parent()
+                .ok_or_else(|| AppError::Config("Invalid config file path.".to_string()))?,
+        )
+        .map_err(AppError::Io)?;
+
+        let mut config = if !config_file_path.exists() {
+            let default_config = Config::default();
+            std::fs::write(
+                &config_file_path,
+                toml::to_string(&default_config).map_err(AppError::TomlSerialize)?,
+            )?;
+            default_config
+        } else {
+            match std::fs::read_to_string(&config_file_path) {
+                Ok(config_str) => Self::parse_config(config_str)?,
+                Err(e) => {
+                    error!("Error while reading the configuration: {e}");
+                    warn!("Using default configuration");
+                    Config::default()
+                }
             }
+        };
+
+        // Ensure notes_dir is an absolute path
+        if !PathBuf::from(&config.notes_dir).is_absolute() {
+            let mut absolute_notes_dir = config_file_path.clone();
+            absolute_notes_dir.pop(); // Remove config file name
+            absolute_notes_dir.push(&config.notes_dir);
+            config.notes_dir = absolute_notes_dir.to_string_lossy().to_string();
         }
+
+        // Create the notes directory if it doesn't exist
+        fs::create_dir_all(&config.notes_dir).map_err(AppError::Io)?;
+
+        Ok(config)
     }
 
     /// Parse the TOML config from a string.
@@ -50,7 +75,6 @@ impl Config {
             Err(e) => {
                 error!("Error while parsing the configuration: {e}");
                 warn!("Using default configuration");
-                fs::create_dir_all(NOTES_FOLDER).map_err(AppError::Io)?;
                 Ok(Config::default())
             }
         }
@@ -75,8 +99,8 @@ impl Config {
     fn config_file_path() -> Result<PathBuf, AppError> {
         let mut config_path = dirs::config_dir()
             .ok_or_else(|| AppError::Config("Could not determine config directory.".to_string()))?;
-        config_path.push("cryptnote");
-        config_path.push("cryptnote.toml");
+        config_path.push("ryokan"); // Changed from cryptnote to ryokan
+        config_path.push("ryokan.toml"); // Changed from cryptnote.toml to ryokan.toml
         Ok(config_path)
     }
 }

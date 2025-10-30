@@ -1,5 +1,7 @@
 use crate::error::AppError;
-use crate::{args::Args, config::Config, file, note, note_database::NoteDatabase};
+use crate::metadata::NoteMetadata;
+use crate::{args::Args, config::Config, file, note};
+use chrono::Utc;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
@@ -15,6 +17,12 @@ use ratatui::{
 };
 use std::{fs, io, path::PathBuf, time::Duration};
 use uuid::Uuid;
+
+pub struct Note {
+    pub uuid: String,
+    pub encrypted_file_path: PathBuf,
+    pub metadata: NoteMetadata,
+}
 
 /// Temporarily exits the alternate screen mode, executes a block of code
 /// and then re-enters the alternate screen mode.
@@ -43,19 +51,16 @@ enum Message {
     Tick,
     Quit,
     NewNote,
-    SelectNote(usize),
     EditSelectedNote,
     ScrollUp,
     ScrollDown,
-    Error(AppError),
 }
 
 pub struct App {
     config: Config,
     pin: String,
-    database: NoteDatabase,
     args: Args,
-    notes: Vec<fs::DirEntry>,
+    notes: Vec<Note>,
     list_state: ListState,
     selected_note_index: usize,
     note_preview_content: String,
@@ -63,48 +68,35 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(
-        config: Config,
-        pin: String,
-        note_database: NoteDatabase,
-        args: Args,
-    ) -> Result<Self, AppError> {
-        let notes_dir = &config.notes_dir;
-        let notes = fs::read_dir(notes_dir)
-            .map_err(AppError::Io)?
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
-            .collect::<Vec<_>>();
-
-        let mut list_state = ListState::default();
-        let selected_note_index = 0;
-        if !notes.is_empty() {
-            list_state.select(Some(selected_note_index));
-        }
-
-        let note_preview_content = Self::load_preview_content(&notes, selected_note_index, &pin)?;
-
-        Ok(Self {
+    pub fn new(config: Config, pin: String, args: Args) -> Result<Self, AppError> {
+        let mut app = Self {
             config,
             pin,
-            database: note_database,
             args,
-            notes,
-            list_state,
-            selected_note_index,
-            note_preview_content,
+            notes: Vec::new(),
+            list_state: ListState::default(),
+            selected_note_index: 0,
+            note_preview_content: String::new(),
             running_state: RunningState::Running,
-        })
+        };
+        app.reload_notes()?;
+
+        if !app.notes.is_empty() {
+            app.list_state.select(Some(app.selected_note_index));
+        }
+
+        app.note_preview_content =
+            Self::load_preview_content(&app.notes, app.selected_note_index, &app.pin)?;
+
+        Ok(app)
     }
 
-    fn load_preview_content(
-        notes: &[fs::DirEntry],
-        index: usize,
-        pin: &str,
-    ) -> Result<String, AppError> {
+    fn load_preview_content(notes: &[Note], index: usize, pin: &str) -> Result<String, AppError> {
         if let Some(note) = notes.get(index) {
-            let filename = note.path();
-            match file::load_and_decrypt_note_content(filename.to_string_lossy().as_ref(), pin) {
+            match file::load_and_decrypt_note_content(
+                note.encrypted_file_path.to_string_lossy().as_ref(),
+                pin,
+            ) {
                 Ok(content) => Ok(String::from_utf8_lossy(&content).to_string()),
                 Err(e) => Ok(format!("Error reading note: {}", e)),
             }
@@ -131,7 +123,6 @@ impl App {
 
         disable_raw_mode().map_err(AppError::Io)?;
         execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(AppError::Io)?;
-        self.database.save()?;
         Ok(())
     }
 
@@ -167,24 +158,22 @@ impl App {
             Message::ScrollDown => self.handle_scroll_down()?,
             Message::ScrollUp => self.handle_scroll_up()?,
             Message::EditSelectedNote => self.handle_edit_selected_note(terminal)?,
-            Message::Error(e) => {
-                self.note_preview_content = format!("Error: {}", e);
-            }
             Message::Tick => { /* No action on tick for now */ }
-            _ => {}
         }
         Ok(())
     }
 
     fn handle_new_note(&mut self) -> Result<(), AppError> {
         let notes_dir_path = PathBuf::from(self.config.notes_dir.clone());
-        let filename = file::generate_uuid_filename();
-        let path = notes_dir_path.join(&filename);
-        let encrypted_content = note::encrypt_note_content(&Vec::new(), &self.pin)?;
-        file::save_note_to_file(&encrypted_content, &path.to_string_lossy())?;
+        let uuid = file::generate_uuid();
+        let encrypted_note_path = notes_dir_path.join(format!("{}.enc.txt", uuid));
+        let metadata_path = notes_dir_path.join(format!("{}.meta.toml", uuid));
 
-        let uuid = filename.split('.').next().unwrap_or("").to_string();
-        self.database.insert(uuid, filename.clone());
+        let encrypted_content = note::encrypt_note_content(&Vec::new(), &self.pin)?;
+        file::save_note_to_file(&encrypted_content, &encrypted_note_path.to_string_lossy())?;
+
+        let metadata = NoteMetadata::new("New Note".to_string());
+        metadata.save(&metadata_path)?;
 
         self.reload_notes()?;
         self.note_preview_content =
@@ -217,8 +206,9 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<(), AppError> {
         if let Some(note) = self.notes.get(self.selected_note_index) {
+            let notes_dir_path = PathBuf::from(self.config.notes_dir.clone());
             let temp_file = format!("temp_{}.txt", Uuid::new_v4());
-            let note_path = note.path().to_string_lossy().into_owned();
+            let note_path = note.encrypted_file_path.to_string_lossy().into_owned();
             let decrypted_content = file::load_and_decrypt_note_content(&note_path, &self.pin)?;
             file::save_note_to_file(&decrypted_content, &temp_file)?;
 
@@ -232,6 +222,12 @@ impl App {
             file::save_note_to_file(&encrypted_content, &note_path)?;
             fs::remove_file(temp_file).map_err(AppError::Io)?;
 
+            // Update metadata
+            let mut metadata = note.metadata.clone(); // Clone to modify
+            metadata.updated_at = Utc::now();
+            let metadata_path = notes_dir_path.join(format!("{}.meta.toml", note.uuid));
+            metadata.save(&metadata_path)?;
+
             self.note_preview_content =
                 Self::load_preview_content(&self.notes, self.selected_note_index, &self.pin)?;
         }
@@ -239,12 +235,57 @@ impl App {
     }
 
     fn reload_notes(&mut self) -> Result<(), AppError> {
-        let notes_dir = &self.config.notes_dir;
-        self.notes = fs::read_dir(notes_dir)
-            .map_err(AppError::Io)?
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".enc.txt"))
-            .collect::<Vec<_>>();
+        use std::collections::HashMap;
+        let notes_dir = PathBuf::from(self.config.notes_dir.clone());
+        let mut files_by_uuid: HashMap<String, (Option<PathBuf>, Option<PathBuf>)> = HashMap::new();
+
+        for entry in fs::read_dir(&notes_dir).map_err(AppError::Io)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                    let parts: Vec<&str> = file_name.split('.').collect();
+                    if parts.len() == 3 {
+                        let uuid = parts[0].to_string();
+                        let extension = parts[1];
+                        match extension {
+                            "enc" => {
+                                files_by_uuid.entry(uuid).or_default().0 = Some(path);
+                            }
+                            "meta" => {
+                                files_by_uuid.entry(uuid).or_default().1 = Some(path);
+                            }
+                            _ => { /* ignore other files */ }
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut loaded_notes = Vec::new();
+        for (uuid, (enc_path_opt, meta_path_opt)) in files_by_uuid {
+            if let (Some(encrypted_file_path), Some(metadata_path)) = (enc_path_opt, meta_path_opt)
+            {
+                match NoteMetadata::load(&metadata_path) {
+                    Ok(metadata) => {
+                        loaded_notes.push(Note {
+                            uuid,
+                            encrypted_file_path,
+                            metadata,
+                        });
+                    }
+                    Err(e) => {
+                        // Log error or handle corrupted metadata file
+                        eprintln!("Error loading metadata for {}: {}", uuid, e);
+                    }
+                }
+            }
+        }
+
+        // Sort notes by updated_at, newest first
+        loaded_notes.sort_by(|a, b| b.metadata.updated_at.cmp(&a.metadata.updated_at));
+
+        self.notes = loaded_notes;
         Ok(())
     }
 
@@ -265,10 +306,7 @@ impl App {
         let items: Vec<_> = self
             .notes
             .iter()
-            .map(|note| {
-                let filename = note.file_name().to_string_lossy().to_string();
-                ListItem::new(filename)
-            })
+            .map(|note| ListItem::new(note.metadata.original_filename.clone()))
             .collect();
         let notes_list = List::new(items)
             .block(Block::default().borders(Borders::ALL).title("Notes"))

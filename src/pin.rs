@@ -70,3 +70,27 @@ pub fn derive_key_from_pin(pin: &str, salt: &[u8]) -> Result<Key<aes_gcm::Aes256
         .map_err(|e| AppError::PinHash(format!("Key derivation failed: {}", e)))?;
     Ok(*Key::<aes_gcm::Aes256Gcm>::from_slice(&key))
 }
+
+pub fn handle_pin_setup_and_verification(config: &mut Config) -> Result<String, AppError> {
+    let stored_pin_hash = load_pin_hash(config)?;
+    let pin = if let Some(hash) = stored_pin_hash
+        && !hash.is_empty()
+    {
+        loop {
+            let entered_pin = ask_for_pin()?;
+            if verify_pin(config, &entered_pin)? {
+                break entered_pin;
+            }
+            eprintln!("Incorrect PIN. Please try again.");
+        }
+    } else {
+        eprintln!("No PIN found. Please set a new 6-digit PIN.");
+        let new_pin = ask_for_pin()?;
+        store_pin(config, &new_pin)?;
+        new_pin
+    };
+    Ok(pin)
+}
+
+#[cfg(test)]
+mod pin_test;

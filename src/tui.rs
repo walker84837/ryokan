@@ -127,22 +127,21 @@ impl App {
     }
 
     fn handle_event(&self) -> Result<Message, AppError> {
-        if event::poll(Duration::from_millis(250)).map_err(AppError::Io)? {
-            if let Event::Key(key) = event::read().map_err(AppError::Io)? {
-                match key.code {
-                    KeyCode::Char('q') => Ok(Message::Quit),
-                    KeyCode::Char('n') => Ok(Message::NewNote),
-                    KeyCode::Down => Ok(Message::ScrollDown),
-                    KeyCode::Up => Ok(Message::ScrollUp),
-                    KeyCode::Enter => Ok(Message::EditSelectedNote),
-                    _ => Ok(Message::Tick),
-                }
-            } else {
-                Ok(Message::Tick)
-            }
-        } else {
-            Ok(Message::Tick)
-        }
+        event::poll(Duration::from_millis(250))
+            .map_err(AppError::Io)?
+            .then(|| event::read().map_err(AppError::Io))
+            .transpose() // turns Option<Result<_,_>> into Result<Option<_>, _>
+            .map(|opt_event| match opt_event {
+                Some(Event::Key(key)) => match key.code {
+                    KeyCode::Char('q') => Message::Quit,
+                    KeyCode::Char('n') => Message::NewNote,
+                    KeyCode::Down => Message::ScrollDown,
+                    KeyCode::Up => Message::ScrollUp,
+                    KeyCode::Enter => Message::EditSelectedNote,
+                    _ => Message::Tick,
+                },
+                _ => Message::Tick,
+            })
     }
 
     fn update(

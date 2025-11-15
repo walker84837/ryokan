@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use log::{error, warn};
+use log::error;
 use serde_derive::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 
@@ -47,8 +47,7 @@ impl Config {
                 Ok(config_str) => Self::parse_config(config_str)?,
                 Err(e) => {
                     error!("Error while reading the configuration: {e}");
-                    warn!("Using default configuration");
-                    Config::default()
+                    return Err(AppError::Io(e));
                 }
             }
         };
@@ -70,14 +69,10 @@ impl Config {
     /// Parse the TOML config from a string.
     /// Returns default configuration if it fails to parse.
     fn parse_config(config_str: String) -> Result<Config, AppError> {
-        match toml::from_str(&config_str) {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                error!("Error while parsing the configuration: {e}");
-                warn!("Using default configuration");
-                Ok(Config::default())
-            }
-        }
+        toml::from_str(&config_str).map_err(|e| {
+            error!("Error while parsing the configuration: {e}");
+            AppError::TomlDeserialize(e)
+        })
     }
 
     /// Save the config to a file

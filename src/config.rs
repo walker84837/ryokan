@@ -1,12 +1,10 @@
 use crate::error::AppError;
 use log::error;
 use serde_derive::{Deserialize, Serialize};
-use std::{
-    fs::{self, File},
-    io::prelude::*,
-    os::unix::fs::OpenOptionsExt,
-    path::PathBuf,
-};
+use std::{fs, io::prelude::*, path::PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 const NOTES_FOLDER: &str = "notes";
 
@@ -42,12 +40,11 @@ impl Config {
 
         let mut config = if !config_file_path.exists() {
             let default_config = Config::default();
-            let mut file = File::options()
-                .create(true)
-                .write(true)
-                .mode(0o600) // Read-write only by owner
-                .open(&config_file_path)
-                .map_err(AppError::Io)?;
+            let mut options = fs::OpenOptions::new();
+            options.create(true).write(true);
+            #[cfg(unix)]
+            options.mode(0o600); // Read-write only by owner
+            let mut file = options.open(&config_file_path).map_err(AppError::Io)?;
 
             file.write_all(
                 toml::to_string(&default_config)
@@ -101,13 +98,11 @@ impl Config {
         )
         .map_err(AppError::Io)?;
 
-        let mut file = File::options()
-            .create(true)
-            .write(true)
-            .truncate(true) // Overwrite existing content
-            .mode(0o600) // Set permissions to rw-rw----
-            .open(&config_path)
-            .map_err(AppError::Io)?;
+        let mut options = fs::OpenOptions::new();
+        options.create(true).write(true).truncate(true);
+        #[cfg(unix)]
+        options.mode(0o600); // Set permissions to rw-rw----
+        let mut file = options.open(&config_path).map_err(AppError::Io)?;
 
         file.write_all(config_str.as_bytes())
             .map_err(AppError::Io)?;
@@ -117,8 +112,8 @@ impl Config {
     fn config_file_path() -> Result<PathBuf, AppError> {
         let mut config_path = dirs::config_dir()
             .ok_or_else(|| AppError::Config("Could not determine config directory.".to_string()))?;
-        config_path.push("ryokan"); // Changed from cryptnote to ryokan
-        config_path.push("ryokan.toml"); // Changed from cryptnote.toml to ryokan.toml
+        config_path.push("ryokan");
+        config_path.push("ryokan.toml");
         Ok(config_path)
     }
 }

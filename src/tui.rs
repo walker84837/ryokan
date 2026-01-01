@@ -249,21 +249,21 @@ impl App {
         for entry in fs::read_dir(&notes_dir).map_err(AppError::Io)? {
             let entry = entry?;
             let path = entry.path();
-            if path.is_file() {
-                if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-                    let parts: Vec<&str> = file_name.split('.').collect();
-                    if parts.len() == 3 {
-                        let uuid = parts[0].to_string();
-                        let extension = parts[1];
-                        match extension {
-                            "enc" => {
-                                files_by_uuid.entry(uuid).or_default().0 = Some(path);
-                            }
-                            "meta" => {
-                                files_by_uuid.entry(uuid).or_default().1 = Some(path);
-                            }
-                            _ => { /* ignore other files */ }
+            if path.is_file()
+                && let Some(file_name) = path.file_name().and_then(|s| s.to_str())
+            {
+                let parts: Vec<&str> = file_name.split('.').collect();
+                if parts.len() == 3 {
+                    let uuid = parts[0].to_string();
+                    let extension = parts[1];
+                    match extension {
+                        "enc" => {
+                            files_by_uuid.entry(uuid).or_default().0 = Some(path);
                         }
+                        "meta" => {
+                            files_by_uuid.entry(uuid).or_default().1 = Some(path);
+                        }
+                        _ => { /* ignore other files */ }
                     }
                 }
             }

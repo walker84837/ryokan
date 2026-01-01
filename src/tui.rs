@@ -15,8 +15,13 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
-use std::{fs, io, path::PathBuf, time::Duration};
-use uuid::Uuid;
+use std::{
+    fs,
+    io::{self, Write},
+    path::PathBuf,
+    time::Duration,
+};
+use tempfile::NamedTempFile;
 
 pub struct Note {
     pub uuid: String,
@@ -206,20 +211,23 @@ impl App {
     ) -> Result<(), AppError> {
         if let Some(note) = self.notes.get(self.selected_note_index) {
             let notes_dir_path = PathBuf::from(self.config.notes_dir.clone());
-            let temp_file = format!("temp_{}.txt", Uuid::new_v4());
+            let mut temp_file = NamedTempFile::new().map_err(AppError::Io)?;
             let note_path = note.encrypted_file_path.to_string_lossy().into_owned();
             let decrypted_content = file::load_and_decrypt_note_content(&note_path, &self.pin)?;
-            file::save_note_to_file(&decrypted_content, &temp_file)?;
+            temp_file
+                .write_all(&decrypted_content)
+                .map_err(AppError::Io)?;
 
             terminal_mode_guard!(terminal, {
-                file::open_in_editor(&self.args, PathBuf::from(&temp_file))?;
+                file::open_in_editor(&self.args, temp_file.path().to_path_buf())?;
             });
 
-            let updated_content = fs::read(&temp_file).map_err(AppError::Io)?;
+            let updated_content = fs::read(temp_file.path()).map_err(AppError::Io)?;
             let encrypted_content = note::encrypt_note_content(&updated_content, &self.pin)?;
 
             file::save_note_to_file(&encrypted_content, &note_path)?;
-            fs::remove_file(temp_file).map_err(AppError::Io)?;
+
+            // tempfile should be automatically deleted when `temp_file` goes out of scope
 
             // Update metadata
             let mut metadata = note.metadata.clone(); // Clone to modify

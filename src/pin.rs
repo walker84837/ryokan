@@ -30,7 +30,12 @@ pub fn load_pin_hash(config: &Config) -> Result<Option<String>, AppError> {
     }
 }
 
-// Create a secure Argon2 instance with strong parameters
+// Create a secure Argon2 instance with strong parameters.
+// Params chosen for local app with 6-digit PIN:
+// - 64 MiB memory: High memory cost to resist GPU/ASIC attacks
+// - t=10 iterations: Time cost for additional computational difficulty
+// - p=1 parallelism: Sequential to minimize side-channel attacks on PIN verification
+// These params balance security for low-entropy PINs against usability on typical hardware.
 fn create_argon2<'a>() -> Result<Argon2<'a>, AppError> {
     let params = Params::new(65536, 10, 1, None)
         .map_err(|e| AppError::PinHash(format!("Failed to create Argon2 params: {}", e)))?;

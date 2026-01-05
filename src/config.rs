@@ -101,7 +101,7 @@ impl Config {
         let mut options = fs::OpenOptions::new();
         options.create(true).write(true).truncate(true);
         #[cfg(unix)]
-        options.mode(0o600); // Set permissions to rw-rw----
+        options.mode(0o600); // Read-write only by owner (rw-------)
         let mut file = options.open(&config_path).map_err(AppError::Io)?;
 
         file.write_all(config_str.as_bytes())

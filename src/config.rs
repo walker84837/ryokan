@@ -1,7 +1,10 @@
 use crate::error::AppError;
 use log::error;
 use serde_derive::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{fs, io::prelude::*, path::PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 const NOTES_FOLDER: &str = "notes";
 
@@ -27,8 +30,8 @@ impl Config {
             None => Self::config_file_path()?,
         };
 
-        // Ensure the parent directory for the config file exists
-        std::fs::create_dir_all(
+        // Make sure the parent directory for the config file exists
+        fs::create_dir_all(
             config_file_path
                 .parent()
                 .ok_or_else(|| AppError::Config("Invalid config file path.".to_string()))?,
@@ -37,13 +40,21 @@ impl Config {
 
         let mut config = if !config_file_path.exists() {
             let default_config = Config::default();
-            std::fs::write(
-                &config_file_path,
-                toml::to_string(&default_config).map_err(AppError::TomlSerialize)?,
-            )?;
+            let mut options = fs::OpenOptions::new();
+            options.create(true).write(true);
+            #[cfg(unix)]
+            options.mode(0o600); // Read-write only by owner
+            let mut file = options.open(&config_file_path).map_err(AppError::Io)?;
+
+            file.write_all(
+                toml::to_string(&default_config)
+                    .map_err(AppError::TomlSerialize)?
+                    .as_bytes(),
+            )
+            .map_err(AppError::Io)?;
             default_config
         } else {
-            match std::fs::read_to_string(&config_file_path) {
+            match fs::read_to_string(&config_file_path) {
                 Ok(config_str) => Self::parse_config(config_str)?,
                 Err(e) => {
                     error!("Error while reading the configuration: {e}");
@@ -80,22 +91,29 @@ impl Config {
         let config_str = toml::to_string(self).map_err(AppError::TomlSerialize)?;
         let config_path = Self::config_file_path()?;
 
-        std::fs::create_dir_all(
+        fs::create_dir_all(
             config_path
                 .parent()
                 .ok_or_else(|| AppError::Config("Invalid config path.".to_string()))?,
         )
         .map_err(AppError::Io)?;
 
-        std::fs::write(config_path, config_str).map_err(AppError::Io)?;
+        let mut options = fs::OpenOptions::new();
+        options.create(true).write(true).truncate(true);
+        #[cfg(unix)]
+        options.mode(0o600); // Read-write only by owner (rw-------)
+        let mut file = options.open(&config_path).map_err(AppError::Io)?;
+
+        file.write_all(config_str.as_bytes())
+            .map_err(AppError::Io)?;
         Ok(())
     }
 
     fn config_file_path() -> Result<PathBuf, AppError> {
         let mut config_path = dirs::config_dir()
             .ok_or_else(|| AppError::Config("Could not determine config directory.".to_string()))?;
-        config_path.push("ryokan"); // Changed from cryptnote to ryokan
-        config_path.push("ryokan.toml"); // Changed from cryptnote.toml to ryokan.toml
+        config_path.push("ryokan");
+        config_path.push("ryokan.toml");
         Ok(config_path)
     }
 }

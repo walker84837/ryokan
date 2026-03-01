@@ -20,9 +20,9 @@ panic = "abort"
 aes-gcm = "0.10.3"
 argon2 = "0.5.3"
 crossterm = "0.29.0"
-clap = { version = "4.5.56", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 dirs = "6.0.0"
-env_logger = "0.11.8"
+env_logger = "0.11.9"
 log = "0.4.29"
 rand = "0.8.5"
 ratatui = "0.30.0"
@@ -30,8 +30,8 @@ rpassword = "7.4.0"
 serde = "1.0.228"
 serde_derive = "1.0.210"
 serde_json = "1.0.149"
-tempfile = "3.24.0"
+tempfile = "3.26.0"
 thiserror = "2.0.18"
-toml = "0.9.11"
+toml = "1.0.3"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.20.0", features = ["v4", "fast-rng"] }
+uuid = { version = "1.21.0", features = ["v4", "fast-rng"] }

@@ -107,8 +107,7 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
             let metadata = NoteMetadata::new(original_filename);
 
             let uuid = file::generate_uuid();
-            let encrypted_note_path = notes_dir.as_ref().join(format!("{}.enc.txt", uuid));
-            let metadata_path = notes_dir.as_ref().join(format!("{}.meta.toml", uuid));
+            let (encrypted_note_path, metadata_path) = file::note_paths(notes_dir.as_ref(), &uuid);
 
             file::save_note_to_file(&encrypted_content, &encrypted_note_path.to_string_lossy())?;
             metadata.save(&metadata_path)?;

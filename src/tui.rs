@@ -7,6 +7,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use log::error;
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -170,8 +171,8 @@ impl App {
     fn handle_new_note(&mut self) -> Result<(), AppError> {
         let notes_dir_path = PathBuf::from(self.config.notes_dir.clone());
         let uuid = file::generate_uuid();
-        let encrypted_note_path = notes_dir_path.join(format!("{}.enc.txt", uuid));
-        let metadata_path = notes_dir_path.join(format!("{}.meta.toml", uuid));
+        let (encrypted_note_path, metadata_path) =
+            file::note_paths(notes_dir_path.as_path(), &uuid);
 
         let encrypted_content = note::encrypt_note_content(&Vec::new(), &self.pin)?;
         file::save_note_to_file(&encrypted_content, &encrypted_note_path.to_string_lossy())?;
@@ -232,7 +233,7 @@ impl App {
             // Update metadata
             let mut metadata = note.metadata.clone(); // Clone to modify
             metadata.updated_at = Utc::now();
-            let metadata_path = notes_dir_path.join(format!("{}.meta.toml", note.uuid));
+            let (_, metadata_path) = file::note_paths(notes_dir_path.as_path(), &note.uuid);
             metadata.save(&metadata_path)?;
 
             self.note_preview_content =
@@ -287,8 +288,7 @@ impl App {
                         });
                     }
                     Err(e) => {
-                        // Log error or handle corrupted metadata file
-                        eprintln!("Error loading metadata for {}: {}", uuid, e);
+                        error!("Error loading metadata for {}: {}", uuid, e);
                     }
                 }
             }

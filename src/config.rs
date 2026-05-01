@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use log::error;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{fs, io::prelude::*, path::PathBuf};
 
 #[cfg(unix)]

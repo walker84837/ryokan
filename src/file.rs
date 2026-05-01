@@ -3,11 +3,24 @@ use crate::{args::Args, note};
 use log::info;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use uuid::Uuid;
 
 pub const MAGIC_BYTES: &[u8] = b"RYOKAN_ENCRYPTED";
+
+/// Generates a UUID for a new note
+pub fn generate_uuid() -> String {
+    Uuid::new_v4().to_string()
+}
+
+/// Generate note file paths from a UUID
+pub fn note_paths(notes_dir: &Path, uuid: &str) -> (PathBuf, PathBuf) {
+    (
+        notes_dir.join(format!("{}.enc.txt", uuid)),
+        notes_dir.join(format!("{}.meta.toml", uuid)),
+    )
+}
 
 /// Saves a note to a file in encrypted format with the given content
 pub fn save_note_to_file(content: &[u8], filename: &str) -> Result<(), AppError> {
@@ -35,11 +48,6 @@ pub fn load_and_decrypt_note_content(filename: &str, pin: &str) -> Result<Vec<u8
             "File does not contain Ryokan magic bytes.".to_string(),
         ))
     }
-}
-
-/// Generates a UUID for a new note
-pub fn generate_uuid() -> String {
-    Uuid::new_v4().to_string()
 }
 
 /// Opens the file in the default text editor

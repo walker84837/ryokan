@@ -2,21 +2,24 @@ use crate::error::AppError;
 use crate::pin;
 use aes_gcm::{
     Aes256Gcm,
-    aead::{Aead, AeadCore, KeyInit},
+    aead::{Aead, KeyInit, Nonce},
 };
-use rand::{self, RngCore, rngs::OsRng};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 pub fn encrypt_note_content(content: &[u8], pin: &str) -> Result<Vec<u8>, AppError> {
     let mut salt = [0u8; 16];
-    OsRng.fill_bytes(&mut salt);
+    StdRng::from_rng(&mut rand::rng()).fill_bytes(&mut salt);
 
     let key = pin::derive_key_from_pin(pin, &salt)?;
     let cipher = Aes256Gcm::new(&key);
 
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let mut nonce_bytes = [0u8; 12];
+    rand::rng().fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::<Aes256Gcm>::from_slice(&nonce_bytes);
 
     let ciphertext = cipher
-        .encrypt(&nonce, content)
+        .encrypt(nonce, content)
         .map_err(|e| AppError::Encryption(format!("Encryption failed: {}", e)))?;
 
     Ok([salt.as_slice(), nonce.as_slice(), &ciphertext].concat())

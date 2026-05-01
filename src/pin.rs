@@ -1,7 +1,6 @@
 use crate::config::Config;
 use crate::error::AppError;
 use aes_gcm::Key;
-use argon2::password_hash::SaltString;
 use argon2::{Algorithm, Argon2, Params, PasswordHasher, PasswordVerifier, Version};
 use log::{info, warn};
 use std::io::{self, Write};
@@ -43,17 +42,21 @@ fn create_argon2<'a>() -> Result<Argon2<'a>, AppError> {
 }
 
 pub fn store_pin(config: &mut Config, pin: &str) -> Result<(), AppError> {
-    let salt = SaltString::generate(&mut rand::thread_rng());
-    let argon2 = create_argon2()?;
-    let hash = argon2
-        .hash_password(pin.as_bytes(), &salt)
-        .map_err(|e| AppError::PinHash(format!("Failed to hash PIN: {}", e)))?
-        .to_string();
-    config.pin_hash = hash;
+    let argon2 = Argon2::default();
+
+    let password_hash = argon2
+        .hash_password(pin.as_bytes())
+        .map_err(|e| AppError::PinHash(format!("Failed to hash PIN: {e}")))?;
+
+    // Store full PHC string (includes salt + params + hash)
+    config.pin_hash = password_hash.to_string();
+
     info!("Saving configuration file to config path");
+
     config
         .save()
-        .map_err(|e| AppError::Config(format!("Failed to save config: {}", e)))?;
+        .map_err(|e| AppError::Config(format!("Failed to save config: {e}")))?;
+
     Ok(())
 }
 

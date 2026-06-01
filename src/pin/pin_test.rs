@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::config::Config;
+use std::assert_matches;
 use tempfile::tempdir;
 
 #[test]
@@ -13,8 +14,8 @@ fn test_store_and_verify_pin() -> Result<(), AppError> {
     let test_pin = "123456";
     store_pin(&mut config, test_pin)?;
 
-    assert!(verify_pin(&config, test_pin)?);
-    assert!(!verify_pin(&config, "654321")?);
+    assert_matches!(verify_pin(&config, test_pin), Ok(true));
+    assert_matches!(verify_pin(&config, "654321"), Ok(false));
 
     Ok(())
 }

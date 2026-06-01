@@ -17,11 +17,14 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 use std::{
+    cmp::Reverse,
+    collections::HashMap,
     fs,
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::Duration,
 };
+
 use tempfile::NamedTempFile;
 
 pub struct Note {
@@ -30,20 +33,24 @@ pub struct Note {
     pub metadata: NoteMetadata,
 }
 
-/// Temporarily exits the alternate screen mode, executes a block of code
+/// Temporarily exits the alternate screen mode, executes an action
 /// and then re-enters the alternate screen mode.
-macro_rules! terminal_mode_guard {
-    ($terminal:expr, $action:block) => {
-        execute!($terminal.backend_mut(), LeaveAlternateScreen).map_err(AppError::Io)?;
-        $terminal.hide_cursor().map_err(|e| AppError::Tui(e.to_string()))?;
+fn terminal_mode_guard(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    action: impl FnOnce() -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(AppError::Io)?;
+    terminal
+        .hide_cursor()
+        .map_err(|e| AppError::Tui(e.to_string()))?;
 
-        // run the action to run in this guard
-        $action
+    action()?;
 
-        // re-enable cursor for TUI control
-        execute!($terminal.backend_mut(), EnterAlternateScreen).map_err(AppError::Io)?;
-        $terminal.show_cursor().map_err(|e| AppError::Tui(e.to_string()))?;
-    };
+    execute!(terminal.backend_mut(), EnterAlternateScreen).map_err(AppError::Io)?;
+    terminal
+        .show_cursor()
+        .map_err(|e| AppError::Tui(e.to_string()))?;
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -99,16 +106,19 @@ impl App {
 
     fn load_preview_content(notes: &[Note], index: usize, pin: &str) -> Result<String, AppError> {
         if let Some(note) = notes.get(index) {
-            match file::load_and_decrypt_note_content(
-                note.encrypted_file_path.to_string_lossy().as_ref(),
-                pin,
-            ) {
+            match file::load_and_decrypt_note_content(&note.encrypted_file_path, pin) {
                 Ok(content) => Ok(String::from_utf8_lossy(&content).to_string()),
                 Err(e) => Ok(format!("Error reading note: {}", e)),
             }
         } else {
             Ok("No note selected.".to_string())
         }
+    }
+
+    fn update_preview_content(&mut self) -> Result<(), AppError> {
+        self.note_preview_content =
+            Self::load_preview_content(&self.notes, self.selected_note_index, &self.pin)?;
+        Ok(())
     }
 
     pub fn run(&mut self) -> Result<(), AppError> {
@@ -169,20 +179,18 @@ impl App {
     }
 
     fn handle_new_note(&mut self) -> Result<(), AppError> {
-        let notes_dir_path = PathBuf::from(self.config.notes_dir.clone());
+        let notes_dir_path = Path::new(&self.config.notes_dir);
         let uuid = file::generate_uuid();
-        let (encrypted_note_path, metadata_path) =
-            file::note_paths(notes_dir_path.as_path(), &uuid);
+        let (encrypted_note_path, metadata_path) = file::note_paths(notes_dir_path, &uuid);
 
         let encrypted_content = note::encrypt_note_content(&Vec::new(), &self.pin)?;
-        file::save_note_to_file(&encrypted_content, &encrypted_note_path.to_string_lossy())?;
+        file::save_note_to_file(&encrypted_content, &encrypted_note_path)?;
 
         let metadata = NoteMetadata::new("New Note".to_string());
         metadata.save(&metadata_path)?;
 
         self.reload_notes()?;
-        self.note_preview_content =
-            Self::load_preview_content(&self.notes, self.selected_note_index, &self.pin)?;
+        self.update_preview_content()?;
         Ok(())
     }
 
@@ -190,8 +198,7 @@ impl App {
         if self.selected_note_index < self.notes.len().saturating_sub(1) {
             self.selected_note_index += 1;
             self.list_state.select(Some(self.selected_note_index));
-            self.note_preview_content =
-                Self::load_preview_content(&self.notes, self.selected_note_index, &self.pin)?;
+            self.update_preview_content()?;
         }
         Ok(())
     }
@@ -200,8 +207,7 @@ impl App {
         if self.selected_note_index > 0 {
             self.selected_note_index -= 1;
             self.list_state.select(Some(self.selected_note_index));
-            self.note_preview_content =
-                Self::load_preview_content(&self.notes, self.selected_note_index, &self.pin)?;
+            self.update_preview_content()?;
         }
         Ok(())
     }
@@ -211,43 +217,38 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<(), AppError> {
         if let Some(note) = self.notes.get(self.selected_note_index) {
-            let notes_dir_path = PathBuf::from(self.config.notes_dir.clone());
+            let notes_dir_path = Path::new(&self.config.notes_dir);
             let mut temp_file = NamedTempFile::new().map_err(AppError::Io)?;
-            let note_path = note.encrypted_file_path.to_string_lossy().into_owned();
+            let note_path = note.encrypted_file_path.clone();
             let decrypted_content = file::load_and_decrypt_note_content(&note_path, &self.pin)?;
             temp_file
                 .write_all(&decrypted_content)
                 .map_err(AppError::Io)?;
 
-            terminal_mode_guard!(terminal, {
-                file::open_in_editor(&self.args, temp_file.path().to_path_buf())?;
-            });
+            terminal_mode_guard(terminal, || {
+                file::open_in_editor(&self.args, temp_file.path().to_path_buf())
+            })?;
 
             let updated_content = fs::read(temp_file.path()).map_err(AppError::Io)?;
             let encrypted_content = note::encrypt_note_content(&updated_content, &self.pin)?;
 
             file::save_note_to_file(&encrypted_content, &note_path)?;
 
-            // tempfile should be automatically deleted when `temp_file` goes out of scope
-
-            // Update metadata
-            let mut metadata = note.metadata.clone(); // Clone to modify
+            let mut metadata = note.metadata.clone();
             metadata.updated_at = Utc::now();
-            let (_, metadata_path) = file::note_paths(notes_dir_path.as_path(), &note.uuid);
+            let (_, metadata_path) = file::note_paths(notes_dir_path, &note.uuid);
             metadata.save(&metadata_path)?;
 
-            self.note_preview_content =
-                Self::load_preview_content(&self.notes, self.selected_note_index, &self.pin)?;
+            self.update_preview_content()?;
         }
         Ok(())
     }
 
     fn reload_notes(&mut self) -> Result<(), AppError> {
-        use std::collections::HashMap;
-        let notes_dir = PathBuf::from(self.config.notes_dir.clone());
+        let notes_dir = Path::new(&self.config.notes_dir);
         let mut files_by_uuid: HashMap<String, (Option<PathBuf>, Option<PathBuf>)> = HashMap::new();
 
-        for entry in fs::read_dir(&notes_dir).map_err(AppError::Io)? {
+        for entry in fs::read_dir(notes_dir).map_err(AppError::Io)? {
             let entry = entry?;
             let path = entry.path();
 
@@ -295,7 +296,7 @@ impl App {
         }
 
         // Sort notes by updated_at, newest first
-        loaded_notes.sort_by(|a, b| b.metadata.updated_at.cmp(&a.metadata.updated_at));
+        loaded_notes.sort_by_key(|b| Reverse(b.metadata.updated_at));
 
         self.notes = loaded_notes;
         Ok(())

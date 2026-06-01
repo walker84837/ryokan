@@ -6,6 +6,7 @@ categories = ["command-line-utilities"]
 keywords = ["cli", "tui", "command-line"]
 readme = "README.md"
 repository = "https://github.com/walker84837/ryokan"
+rust-version = "1.88.0"
 
 [profile.dev]
 debug = false

@@ -23,18 +23,23 @@ pub fn note_paths(notes_dir: &Path, uuid: &str) -> (PathBuf, PathBuf) {
 }
 
 /// Saves a note to a file in encrypted format with the given content
-pub fn save_note_to_file(content: &[u8], filename: &str) -> Result<(), AppError> {
-    let mut file = File::create(filename).map_err(AppError::Io)?;
+pub fn save_note_to_file(content: &[u8], path: impl AsRef<Path>) -> Result<(), AppError> {
+    let path = path.as_ref();
+    let mut file = File::create(path).map_err(AppError::Io)?;
     file.write_all(MAGIC_BYTES).map_err(AppError::Io)?;
     file.write_all(content).map_err(AppError::Io)?;
-    info!("Note saved to {filename}");
+    info!("Note saved to {}", path.display());
     Ok(())
 }
 
 /// Loads and decrypts the content of a note
-pub fn load_and_decrypt_note_content(filename: &str, pin: &str) -> Result<Vec<u8>, AppError> {
+pub fn load_and_decrypt_note_content(
+    path: impl AsRef<Path>,
+    pin: &str,
+) -> Result<Vec<u8>, AppError> {
+    let path = path.as_ref();
     let mut encrypted_data = Vec::new();
-    let mut file = File::open(filename).map_err(AppError::Io)?;
+    let mut file = File::open(path).map_err(AppError::Io)?;
     file.read_to_end(&mut encrypted_data)
         .map_err(AppError::Io)?;
 

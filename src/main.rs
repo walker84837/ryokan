@@ -37,12 +37,9 @@ fn main() -> Result<(), AppError> {
 
     let pin = pin::handle_pin_setup_and_verification(&mut config)?;
 
-    match args.command {
-        Some(args::Subcommands::EncryptUnencrypted) => {
-            encrypt_unencrypted_files(&config.notes_dir, &pin)?;
-            return Ok(());
-        }
-        None => {}
+    if let Some(args::Subcommands::EncryptUnencrypted) = args.command {
+        encrypt_unencrypted_files(&config.notes_dir, &pin)?;
+        return Ok(());
     }
 
     let mut app = tui::App::new(config, pin, args)?;
@@ -109,7 +106,7 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
             let uuid = file::generate_uuid();
             let (encrypted_note_path, metadata_path) = file::note_paths(notes_dir.as_ref(), &uuid);
 
-            file::save_note_to_file(&encrypted_content, &encrypted_note_path.to_string_lossy())?;
+            file::save_note_to_file(&encrypted_content, &encrypted_note_path)?;
             metadata.save(&metadata_path)?;
 
             fs::remove_file(&file_path)?;

@@ -29,7 +29,7 @@ rand = "0.10.0"
 ratatui = "0.30.0"
 rpassword = "7.5.1"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 tempfile = "3.27.0"
 thiserror = "2.0.18"
 toml = "1.1.2"

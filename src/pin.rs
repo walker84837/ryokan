@@ -20,12 +20,12 @@ pub fn ask_for_pin() -> Result<String, AppError> {
     Ok(trimmed_pin)
 }
 
-pub fn load_pin_hash(config: &Config) -> Result<Option<String>, AppError> {
+pub fn load_pin_hash(config: &Config) -> Option<String> {
     let pin_hash = &config.pin_hash;
     if pin_hash.is_empty() {
-        Ok(None)
+        None
     } else {
-        Ok(Some(pin_hash.to_string()))
+        Some(pin_hash.clone())
     }
 }
 
@@ -37,7 +37,7 @@ pub fn load_pin_hash(config: &Config) -> Result<Option<String>, AppError> {
 // These params balance security for low-entropy PINs against usability on typical hardware.
 fn create_argon2<'a>() -> Result<Argon2<'a>, AppError> {
     let params = Params::new(65536, 10, 1, None)
-        .map_err(|e| AppError::PinHash(format!("Failed to create Argon2 params: {}", e)))?;
+        .map_err(|e| AppError::PinHash(format!("Failed to create Argon2 params: {e}")))?;
     Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
 }
 
@@ -61,16 +61,15 @@ pub fn store_pin(config: &mut Config, pin: &str) -> Result<(), AppError> {
 }
 
 pub fn verify_pin(config: &Config, pin: &str) -> Result<bool, AppError> {
-    match load_pin_hash(config)? {
+    match load_pin_hash(config) {
         Some(stored_hash) => {
             let argon2 = create_argon2()?;
             if stored_hash.is_empty() {
                 warn!("Stored hash seems to be empty, assuming PIN can't be verified.");
                 return Ok(false);
             }
-            let parsed_hash = argon2::PasswordHash::new(&stored_hash).map_err(|e| {
-                AppError::PinHash(format!("Failed to parse stored PIN hash: {}", e))
-            })?;
+            let parsed_hash = argon2::PasswordHash::new(&stored_hash)
+                .map_err(|e| AppError::PinHash(format!("Failed to parse stored PIN hash: {e}")))?;
             info!("Verifying PIN");
             Ok(argon2.verify_password(pin.as_bytes(), &parsed_hash).is_ok())
         }
@@ -83,12 +82,12 @@ pub fn derive_key_from_pin(pin: &str, salt: &[u8]) -> Result<Key<aes_gcm::Aes256
     let mut key = [0u8; 32];
     argon2
         .hash_password_into(pin.as_bytes(), salt, &mut key)
-        .map_err(|e| AppError::PinHash(format!("Key derivation failed: {}", e)))?;
+        .map_err(|e| AppError::PinHash(format!("Key derivation failed: {e}")))?;
     Ok(*Key::<aes_gcm::Aes256Gcm>::from_slice(&key))
 }
 
 pub fn handle_pin_setup_and_verification(config: &mut Config) -> Result<String, AppError> {
-    let stored_pin_hash = load_pin_hash(config)?;
+    let stored_pin_hash = load_pin_hash(config);
     let pin = if let Some(hash) = stored_pin_hash
         && !hash.is_empty()
     {

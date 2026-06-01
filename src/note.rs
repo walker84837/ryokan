@@ -20,7 +20,7 @@ pub fn encrypt_note_content(content: &[u8], pin: &str) -> Result<Vec<u8>, AppErr
 
     let ciphertext = cipher
         .encrypt(nonce, content)
-        .map_err(|e| AppError::Encryption(format!("Encryption failed: {}", e)))?;
+        .map_err(|e| AppError::Encryption(format!("Encryption failed: {e}")))?;
 
     Ok([salt.as_slice(), nonce.as_slice(), &ciphertext].concat())
 }
@@ -36,7 +36,7 @@ pub fn decrypt_note_content(encrypted_data: &[u8], pin: &str) -> Result<Vec<u8>,
 
     let decrypted = cipher
         .decrypt(nonce, ciphertext)
-        .map_err(|e| AppError::Decryption(format!("Decryption failed: {}", e)))?;
+        .map_err(|e| AppError::Decryption(format!("Decryption failed: {e}")))?;
 
     Ok(decrypted)
 }

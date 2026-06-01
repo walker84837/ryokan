@@ -23,8 +23,7 @@ use std::{fs, path::Path};
 fn main() -> Result<(), AppError> {
     let args = Args::parse();
 
-    let mut config = Config::new(&args.config_file)?;
-    fs::create_dir_all(&config.notes_dir).map_err(AppError::Io)?;
+    let mut config = Config::new(args.config_file.as_ref())?;
 
     let filter_level = match args.verbose_level {
         0 => LevelFilter::Off,

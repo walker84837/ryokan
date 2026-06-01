@@ -17,8 +17,8 @@ pub fn generate_uuid() -> String {
 /// Generate note file paths from a UUID
 pub fn note_paths(notes_dir: &Path, uuid: &str) -> (PathBuf, PathBuf) {
     (
-        notes_dir.join(format!("{}.enc.txt", uuid)),
-        notes_dir.join(format!("{}.meta.toml", uuid)),
+        notes_dir.join(format!("{uuid}.enc.txt")),
+        notes_dir.join(format!("{uuid}.meta.toml")),
     )
 }
 
@@ -56,11 +56,11 @@ pub fn load_and_decrypt_note_content(
 }
 
 /// Opens the file in the default text editor
-pub fn open_in_editor(args: &Args, filename: PathBuf) -> Result<(), AppError> {
+pub fn open_in_editor(args: &Args, path: &Path) -> Result<(), AppError> {
     let env_editor = std::env::var("EDITOR").unwrap_or_else(|_| "nano".to_string());
     let editor = args.editor.as_ref().unwrap_or(&env_editor);
     Command::new(editor)
-        .arg(filename)
+        .arg(path)
         .spawn()
         .map_err(AppError::Io)?
         .wait()

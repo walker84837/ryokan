@@ -9,7 +9,7 @@ use tempfile::tempdir;
 fn test_store_and_verify_pin() -> Result<(), AppError> {
     let dir = tempdir().map_err(AppError::Io)?;
     let config_path = dir.path().join("test_config.toml");
-    let mut config = Config::new(&Some(config_path.clone()))?;
+    let mut config = Config::new(Some(&config_path))?;
 
     let test_pin = "123456";
     store_pin(&mut config, test_pin)?;

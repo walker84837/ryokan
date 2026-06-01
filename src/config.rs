@@ -24,9 +24,9 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn new(config_path_param: &Option<PathBuf>) -> Result<Config, AppError> {
-        let config_file_path = match config_path_param.to_owned() {
-            Some(p) => p,
+    pub fn new(config_path_param: Option<&PathBuf>) -> Result<Config, AppError> {
+        let config_file_path = match config_path_param {
+            Some(p) => p.clone(),
             None => Self::config_file_path()?,
         };
 
@@ -55,7 +55,7 @@ impl Config {
             default_config
         } else {
             match fs::read_to_string(&config_file_path) {
-                Ok(config_str) => Self::parse_config(config_str)?,
+                Ok(config_str) => Self::parse_config(&config_str)?,
                 Err(e) => {
                     error!("Error while reading the configuration: {e}");
                     return Err(AppError::Io(e));
@@ -79,8 +79,8 @@ impl Config {
 
     /// Parse the TOML config from a string.
     /// Returns default configuration if it fails to parse.
-    fn parse_config(config_str: String) -> Result<Config, AppError> {
-        toml::from_str(&config_str).map_err(|e| {
+    fn parse_config(config_str: &str) -> Result<Config, AppError> {
+        toml::from_str(config_str).map_err(|e| {
             error!("Error while parsing the configuration: {e}");
             AppError::TomlDeserialize(e)
         })

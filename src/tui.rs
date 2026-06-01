@@ -59,7 +59,7 @@ enum RunningState {
     Quit,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Message {
     Tick,
     Quit,
@@ -99,26 +99,25 @@ impl App {
         }
 
         app.note_preview_content =
-            Self::load_preview_content(&app.notes, app.selected_note_index, &app.pin)?;
+            Self::load_preview_content(&app.notes, app.selected_note_index, &app.pin);
 
         Ok(app)
     }
 
-    fn load_preview_content(notes: &[Note], index: usize, pin: &str) -> Result<String, AppError> {
+    fn load_preview_content(notes: &[Note], index: usize, pin: &str) -> String {
         if let Some(note) = notes.get(index) {
             match file::load_and_decrypt_note_content(&note.encrypted_file_path, pin) {
-                Ok(content) => Ok(String::from_utf8_lossy(&content).to_string()),
-                Err(e) => Ok(format!("Error reading note: {}", e)),
+                Ok(content) => String::from_utf8_lossy(&content).to_string(),
+                Err(e) => format!("Error reading note: {e}"),
             }
         } else {
-            Ok("No note selected.".to_string())
+            "No note selected.".to_string()
         }
     }
 
-    fn update_preview_content(&mut self) -> Result<(), AppError> {
+    fn update_preview_content(&mut self) {
         self.note_preview_content =
-            Self::load_preview_content(&self.notes, self.selected_note_index, &self.pin)?;
-        Ok(())
+            Self::load_preview_content(&self.notes, self.selected_note_index, &self.pin);
     }
 
     pub fn run(&mut self) -> Result<(), AppError> {
@@ -133,7 +132,7 @@ impl App {
                 .draw(|f| self.view(f))
                 .map_err(|e| AppError::Tui(e.to_string()))?;
 
-            let message = self.handle_event()?;
+            let message = Self::handle_event()?;
             self.update(message, &mut terminal)?;
         }
 
@@ -142,7 +141,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_event(&self) -> Result<Message, AppError> {
+    fn handle_event() -> Result<Message, AppError> {
         event::poll(Duration::from_millis(250))
             .map_err(AppError::Io)?
             .then(|| event::read().map_err(AppError::Io))
@@ -170,8 +169,8 @@ impl App {
                 self.running_state = RunningState::Quit;
             }
             Message::NewNote => self.handle_new_note()?,
-            Message::ScrollDown => self.handle_scroll_down()?,
-            Message::ScrollUp => self.handle_scroll_up()?,
+            Message::ScrollDown => self.handle_scroll_down(),
+            Message::ScrollUp => self.handle_scroll_up(),
             Message::EditSelectedNote => self.handle_edit_selected_note(terminal)?,
             Message::Tick => { /* No action on tick for now */ }
         }
@@ -190,26 +189,24 @@ impl App {
         metadata.save(&metadata_path)?;
 
         self.reload_notes()?;
-        self.update_preview_content()?;
+        self.update_preview_content();
         Ok(())
     }
 
-    fn handle_scroll_down(&mut self) -> Result<(), AppError> {
+    fn handle_scroll_down(&mut self) {
         if self.selected_note_index < self.notes.len().saturating_sub(1) {
             self.selected_note_index += 1;
             self.list_state.select(Some(self.selected_note_index));
-            self.update_preview_content()?;
+            self.update_preview_content();
         }
-        Ok(())
     }
 
-    fn handle_scroll_up(&mut self) -> Result<(), AppError> {
+    fn handle_scroll_up(&mut self) {
         if self.selected_note_index > 0 {
             self.selected_note_index -= 1;
             self.list_state.select(Some(self.selected_note_index));
-            self.update_preview_content()?;
+            self.update_preview_content();
         }
-        Ok(())
     }
 
     fn handle_edit_selected_note(
@@ -226,7 +223,7 @@ impl App {
                 .map_err(AppError::Io)?;
 
             terminal_mode_guard(terminal, || {
-                file::open_in_editor(&self.args, temp_file.path().to_path_buf())
+                file::open_in_editor(&self.args, temp_file.path())
             })?;
 
             let updated_content = fs::read(temp_file.path()).map_err(AppError::Io)?;
@@ -239,7 +236,7 @@ impl App {
             let (_, metadata_path) = file::note_paths(notes_dir_path, &note.uuid);
             metadata.save(&metadata_path)?;
 
-            self.update_preview_content()?;
+            self.update_preview_content();
         }
         Ok(())
     }
@@ -289,7 +286,7 @@ impl App {
                         });
                     }
                     Err(e) => {
-                        error!("Error loading metadata for {}: {}", uuid, e);
+                        error!("Error loading metadata for {uuid}: {e}");
                     }
                 }
             }
@@ -319,7 +316,7 @@ impl App {
         let items: Vec<_> = self
             .notes
             .iter()
-            .map(|note| ListItem::new(note.metadata.original_filename.clone()))
+            .map(|note| ListItem::new(note.metadata.original_filename.as_str()))
             .collect();
         let notes_list = List::new(items)
             .block(Block::default().borders(Borders::ALL).title("Notes"))
@@ -331,7 +328,7 @@ impl App {
             .highlight_symbol(">> ");
         f.render_stateful_widget(notes_list, chunks[0], &mut self.list_state);
 
-        let preview_paragraph = Paragraph::new(self.note_preview_content.clone())
+        let preview_paragraph = Paragraph::new(self.note_preview_content.as_str())
             .block(Block::default().borders(Borders::ALL).title("Preview"));
         f.render_widget(preview_paragraph, chunks[1]);
 

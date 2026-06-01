@@ -63,12 +63,11 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
             let file_content = fs::read(&path)?;
             if file_content.starts_with(MAGIC_BYTES) {
                 // It's an encrypted file
-                if !path
+                let is_encrypted = path
                     .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .ends_with(".enc.txt")
-                {
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| s.ends_with(".enc.txt"));
+                if !is_encrypted {
                     // Rename it: it's an encrypted file, but without the correct extension
                     let new_path = path.with_extension("enc.txt");
                     info!(

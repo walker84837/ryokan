@@ -1,7 +1,11 @@
 use crate::error::AppError;
 use log::error;
 use serde::{Deserialize, Serialize};
-use std::{fs, io::prelude::*, path::PathBuf};
+use std::{
+    fs,
+    io::prelude::*,
+    path::{Path, PathBuf},
+};
 
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -38,7 +42,15 @@ impl Config {
         )
         .map_err(AppError::Io)?;
 
-        let mut config = if !config_file_path.exists() {
+        let mut config = if config_file_path.exists() {
+            match fs::read_to_string(&config_file_path) {
+                Ok(config_str) => Self::parse_config(&config_str)?,
+                Err(e) => {
+                    error!("Error while reading the configuration: {e}");
+                    return Err(AppError::Io(e));
+                }
+            }
+        } else {
             let default_config = Config::default();
             let mut options = fs::OpenOptions::new();
             options.create(true).write(true);
@@ -53,22 +65,12 @@ impl Config {
             )
             .map_err(AppError::Io)?;
             default_config
-        } else {
-            match fs::read_to_string(&config_file_path) {
-                Ok(config_str) => Self::parse_config(&config_str)?,
-                Err(e) => {
-                    error!("Error while reading the configuration: {e}");
-                    return Err(AppError::Io(e));
-                }
-            }
         };
 
-        // Ensure notes_dir is an absolute path
-        if !PathBuf::from(&config.notes_dir).is_absolute() {
-            let mut absolute_notes_dir = config_file_path.clone();
-            absolute_notes_dir.pop(); // Remove config file name
-            absolute_notes_dir.push(&config.notes_dir);
-            config.notes_dir = absolute_notes_dir.to_string_lossy().to_string();
+        if !Path::new(&config.notes_dir).is_absolute()
+            && let Some(parent) = config_file_path.parent()
+        {
+            config.notes_dir = parent.join(&config.notes_dir).to_string_lossy().to_string();
         }
 
         // Create the notes directory if it doesn't exist

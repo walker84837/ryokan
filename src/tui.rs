@@ -257,19 +257,11 @@ impl App {
                 continue;
             };
 
-            let parts: Vec<&str> = file_name.split('.').collect();
-            if parts.len() == 3 {
-                let uuid = parts[0].to_string();
-                let extension = parts[1];
-                match extension {
-                    "enc" => {
-                        files_by_uuid.entry(uuid).or_default().0 = Some(path);
-                    }
-                    "meta" => {
-                        files_by_uuid.entry(uuid).or_default().1 = Some(path);
-                    }
-                    _ => { /* ignore other files */ }
-                }
+            // Tuple `.0` = encrypted file path, `.1` = metadata file path
+            if let Some(uuid) = file_name.strip_suffix(".enc.txt") {
+                files_by_uuid.entry(uuid.to_string()).or_default().0 = Some(path.clone());
+            } else if let Some(uuid) = file_name.strip_suffix(".meta.toml") {
+                files_by_uuid.entry(uuid.to_string()).or_default().1 = Some(path.clone());
             }
         }
 

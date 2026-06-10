@@ -3,19 +3,15 @@
 
 mod args;
 mod config;
+mod error;
 mod file;
 mod metadata;
 mod note;
 mod pin;
-
-use crate::{args::Args, config::Config};
-use clap::Parser;
-mod error;
 mod tui;
 
-use crate::error::AppError;
-use crate::file::MAGIC_BYTES;
-use crate::metadata::NoteMetadata;
+use crate::{args::Args, config::Config, error::AppError};
+use clap::Parser;
 use log::LevelFilter;
 use log::info;
 use std::{fs, path::Path};
@@ -37,7 +33,7 @@ fn main() -> Result<(), AppError> {
     let pin = pin::handle_pin_setup_and_verification(&mut config)?;
 
     if let Some(args::Subcommands::EncryptUnencrypted) = args.command {
-        encrypt_unencrypted_files(&config.notes_dir, &pin)?;
+        encrypt_unencrypted_files(config.notes_dir_path(), &pin)?;
         return Ok(());
     }
 
@@ -61,7 +57,7 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
 
         if path.is_file() {
             let file_content = fs::read(&path)?;
-            if file_content.starts_with(MAGIC_BYTES) {
+            if file::is_encrypted_file(&file_content) {
                 // It's an encrypted file
                 let is_encrypted = path
                     .file_name()
@@ -92,27 +88,17 @@ fn encrypt_unencrypted_files(notes_dir: impl AsRef<Path>, pin: &str) -> Result<(
         for file_path in unencrypted_files {
             info!("Encrypting {}...", file_path.display());
             let content = fs::read(&file_path)?;
-            let encrypted_content = note::encrypt_note_content(&content, pin)?;
 
             let original_filename = file_path
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            let metadata = NoteMetadata::new(original_filename);
 
-            let uuid = file::generate_uuid();
-            let (encrypted_note_path, metadata_path) = file::note_paths(notes_dir.as_ref(), &uuid);
-
-            file::save_note_to_file(&encrypted_content, &encrypted_note_path)?;
-            metadata.save(&metadata_path)?;
+            file::create_new_note(notes_dir.as_ref(), pin, &original_filename, &content)?;
 
             fs::remove_file(&file_path)?;
-            info!(
-                "Encrypted {} to {}",
-                file_path.display(),
-                encrypted_note_path.display()
-            );
+            info!("Encrypted {}", file_path.display());
         }
         info!("Encryption complete.");
         return Ok(());

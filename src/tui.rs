@@ -21,9 +21,10 @@ use std::{
     collections::HashMap,
     fs,
     io::{self, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::Duration,
 };
+use zeroize::Zeroizing;
 
 use tempfile::NamedTempFile;
 
@@ -31,6 +32,29 @@ pub struct Note {
     pub uuid: String,
     pub encrypted_file_path: PathBuf,
     pub metadata: NoteMetadata,
+}
+
+/// RAII guard for terminal raw mode and alternate screen
+struct TerminalGuard {
+    terminal: Terminal<CrosstermBackend<io::Stdout>>,
+}
+
+impl TerminalGuard {
+    fn init() -> Result<Self, AppError> {
+        enable_raw_mode().map_err(AppError::Io)?;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen).map_err(AppError::Io)?;
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = Terminal::new(backend).map_err(|e| AppError::Tui(e.to_string()))?;
+        Ok(Self { terminal })
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+    }
 }
 
 /// Temporarily exits the alternate screen mode, executes an action
@@ -71,7 +95,7 @@ enum Message {
 
 pub struct App {
     config: Config,
-    pin: String,
+    pin: Zeroizing<String>,
     args: Args,
     notes: Vec<Note>,
     list_state: ListState,
@@ -81,7 +105,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: Config, pin: String, args: Args) -> Result<Self, AppError> {
+    pub fn new(config: Config, pin: Zeroizing<String>, args: Args) -> Result<Self, AppError> {
         let mut app = Self {
             config,
             pin,
@@ -121,23 +145,18 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<(), AppError> {
-        enable_raw_mode().map_err(AppError::Io)?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen).map_err(AppError::Io)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend).map_err(|e| AppError::Tui(e.to_string()))?;
+        let mut guard = TerminalGuard::init()?;
 
         while self.running_state == RunningState::Running {
-            terminal
+            guard
+                .terminal
                 .draw(|f| self.view(f))
                 .map_err(|e| AppError::Tui(e.to_string()))?;
 
             let message = Self::handle_event()?;
-            self.update(message, &mut terminal)?;
+            self.update(message, &mut guard.terminal)?;
         }
 
-        disable_raw_mode().map_err(AppError::Io)?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(AppError::Io)?;
         Ok(())
     }
 
@@ -178,15 +197,7 @@ impl App {
     }
 
     fn handle_new_note(&mut self) -> Result<(), AppError> {
-        let notes_dir_path = Path::new(&self.config.notes_dir);
-        let uuid = file::generate_uuid();
-        let (encrypted_note_path, metadata_path) = file::note_paths(notes_dir_path, &uuid);
-
-        let encrypted_content = note::encrypt_note_content(&Vec::new(), &self.pin)?;
-        file::save_note_to_file(&encrypted_content, &encrypted_note_path)?;
-
-        let metadata = NoteMetadata::new("New Note".to_string());
-        metadata.save(&metadata_path)?;
+        file::create_new_note(self.config.notes_dir_path(), &self.pin, "New Note", &[])?;
 
         self.reload_notes()?;
         self.update_preview_content();
@@ -214,8 +225,8 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<(), AppError> {
         if let Some(note) = self.notes.get(self.selected_note_index) {
-            let notes_dir_path = Path::new(&self.config.notes_dir);
-            let mut temp_file = NamedTempFile::new().map_err(AppError::Io)?;
+            let mut temp_file =
+                NamedTempFile::new_in(self.config.notes_dir_path()).map_err(AppError::Io)?;
             let note_path = note.encrypted_file_path.clone();
             let decrypted_content = file::load_and_decrypt_note_content(&note_path, &self.pin)?;
             temp_file
@@ -233,7 +244,7 @@ impl App {
 
             let mut metadata = note.metadata.clone();
             metadata.updated_at = Utc::now();
-            let (_, metadata_path) = file::note_paths(notes_dir_path, &note.uuid);
+            let (_, metadata_path) = file::note_paths(self.config.notes_dir_path(), &note.uuid);
             metadata.save(&metadata_path)?;
 
             self.update_preview_content();
@@ -242,7 +253,7 @@ impl App {
     }
 
     fn reload_notes(&mut self) -> Result<(), AppError> {
-        let notes_dir = Path::new(&self.config.notes_dir);
+        let notes_dir = self.config.notes_dir_path();
         let mut files_by_uuid: HashMap<String, (Option<PathBuf>, Option<PathBuf>)> = HashMap::new();
 
         for entry in fs::read_dir(notes_dir).map_err(AppError::Io)? {

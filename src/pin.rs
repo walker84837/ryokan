@@ -4,10 +4,11 @@ use aes_gcm::Key;
 use argon2::{Algorithm, Argon2, Params, PasswordHasher, PasswordVerifier, Version};
 use log::info;
 use std::io::{self, Write};
+use zeroize::Zeroizing;
 
 const MAX_PIN_LENGTH: usize = 6;
 
-pub fn ask_for_pin() -> Result<String, AppError> {
+pub fn ask_for_pin() -> Result<Zeroizing<String>, AppError> {
     print!("Please enter your 6-digit PIN: ");
     // Make sure prompt is displayed before reading
     io::stdout().flush().map_err(AppError::Io)?;
@@ -17,7 +18,7 @@ pub fn ask_for_pin() -> Result<String, AppError> {
     if trimmed_pin.len() != MAX_PIN_LENGTH {
         return Err(AppError::Pin("PIN must be 6 digits.".to_string()));
     }
-    Ok(trimmed_pin)
+    Ok(Zeroizing::new(trimmed_pin))
 }
 
 pub fn load_pin_hash(config: &Config) -> Option<String> {
@@ -36,7 +37,7 @@ fn create_argon2() -> Argon2<'static> {
 }
 
 pub fn store_pin(config: &mut Config, pin: &str) -> Result<(), AppError> {
-    let argon2 = Argon2::default();
+    let argon2 = create_argon2();
 
     let password_hash = argon2
         .hash_password(pin.as_bytes())
@@ -74,7 +75,9 @@ pub fn derive_key_from_pin(pin: &str, salt: &[u8]) -> Result<Key<aes_gcm::Aes256
     Ok(*Key::<aes_gcm::Aes256Gcm>::from_slice(&key))
 }
 
-pub fn handle_pin_setup_and_verification(config: &mut Config) -> Result<String, AppError> {
+pub fn handle_pin_setup_and_verification(
+    config: &mut Config,
+) -> Result<Zeroizing<String>, AppError> {
     let stored_pin_hash = load_pin_hash(config);
     let pin = if let Some(hash) = stored_pin_hash
         && !hash.is_empty()

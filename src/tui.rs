@@ -34,6 +34,30 @@ pub struct Note {
     pub metadata: NoteMetadata,
 }
 
+fn format_preview_content(note: &Note, decrypted: &[u8]) -> String {
+    let content_str = String::from_utf8_lossy(decrypted);
+    let word_count = content_str.split_whitespace().count();
+    let tag_str = if note.metadata.tags.is_empty() {
+        String::new()
+    } else {
+        format!("#{}\n", note.metadata.tags.join(" #"))
+    };
+
+    format!(
+        "{}\n\
+         ─────────────────────────────────\n\
+         Created: {}\n\
+         Updated: {}\n\
+         Words: {word_count}\n\
+         {tag_str}\
+         ─────────────────────────────────\n\
+         {content_str}",
+        note.metadata.original_filename,
+        note.metadata.created_at.format("%Y-%m-%d %H:%M"),
+        note.metadata.updated_at.format("%Y-%m-%d %H:%M"),
+    )
+}
+
 /// RAII guard for terminal raw mode and alternate screen
 struct TerminalGuard {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
@@ -91,6 +115,7 @@ enum Message {
     EditSelectedNote,
     ScrollUp,
     ScrollDown,
+    DeleteNote,
 }
 
 pub struct App {
@@ -102,6 +127,7 @@ pub struct App {
     selected_note_index: usize,
     note_preview_content: String,
     running_state: RunningState,
+    show_delete_prompt: bool,
 }
 
 impl App {
@@ -115,6 +141,7 @@ impl App {
             selected_note_index: 0,
             note_preview_content: String::new(),
             running_state: RunningState::Running,
+            show_delete_prompt: false,
         };
         app.reload_notes()?;
 
@@ -131,7 +158,7 @@ impl App {
     fn load_preview_content(notes: &[Note], index: usize, pin: &str) -> String {
         if let Some(note) = notes.get(index) {
             match file::load_and_decrypt_note_content(&note.encrypted_file_path, pin) {
-                Ok(content) => String::from_utf8_lossy(&content).to_string(),
+                Ok(content) => format_preview_content(note, &content),
                 Err(e) => format!("Error reading note: {e}"),
             }
         } else {
@@ -153,18 +180,18 @@ impl App {
                 .draw(|f| self.view(f))
                 .map_err(|e| AppError::Tui(e.to_string()))?;
 
-            let message = Self::handle_event()?;
+            let message = self.handle_event()?;
             self.update(message, &mut guard.terminal)?;
         }
 
         Ok(())
     }
 
-    fn handle_event() -> Result<Message, AppError> {
+    fn handle_event(&mut self) -> Result<Message, AppError> {
         event::poll(Duration::from_millis(250))
             .map_err(AppError::Io)?
             .then(|| event::read().map_err(AppError::Io))
-            .transpose() // turns Option<Result<_,_>> into Result<Option<_>, _>
+            .transpose()
             .map(|opt_event| match opt_event {
                 Some(Event::Key(key)) => match key.code {
                     KeyCode::Char('q') => Message::Quit,
@@ -172,7 +199,20 @@ impl App {
                     KeyCode::Down => Message::ScrollDown,
                     KeyCode::Up => Message::ScrollUp,
                     KeyCode::Enter => Message::EditSelectedNote,
-                    _ => Message::Tick,
+                    KeyCode::Char('d') if self.show_delete_prompt => {
+                        self.show_delete_prompt = false;
+                        Message::DeleteNote
+                    }
+                    KeyCode::Char('d') => {
+                        if !self.notes.is_empty() {
+                            self.show_delete_prompt = true;
+                        }
+                        Message::Tick
+                    }
+                    _ => {
+                        self.show_delete_prompt = false;
+                        Message::Tick
+                    }
                 },
                 _ => Message::Tick,
             })
@@ -191,6 +231,7 @@ impl App {
             Message::ScrollDown => self.handle_scroll_down(),
             Message::ScrollUp => self.handle_scroll_up(),
             Message::EditSelectedNote => self.handle_edit_selected_note(terminal)?,
+            Message::DeleteNote => self.handle_delete_note()?,
             Message::Tick => { /* No action on tick for now */ }
         }
         Ok(())
@@ -218,6 +259,16 @@ impl App {
             self.list_state.select(Some(self.selected_note_index));
             self.update_preview_content();
         }
+    }
+
+    fn handle_delete_note(&mut self) -> Result<(), AppError> {
+        if let Some(note) = self.notes.get(self.selected_note_index) {
+            file::delete_note_files(self.config.notes_dir_path(), &note.uuid)?;
+        }
+        self.selected_note_index = self.selected_note_index.saturating_sub(1);
+        self.reload_notes()?;
+        self.update_preview_content();
+        Ok(())
     }
 
     fn handle_edit_selected_note(
@@ -335,12 +386,24 @@ impl App {
             .block(Block::default().borders(Borders::ALL).title("Preview"));
         f.render_widget(preview_paragraph, chunks[1]);
 
-        let help_text = Line::from(vec![
-            Span::raw("Up/Down: Navigate  "),
-            Span::raw("Enter: Open/Edit  "),
-            Span::raw("n: New Note  "),
-            Span::raw("q: Quit"),
-        ]);
+        let help_text = if self.show_delete_prompt {
+            Line::from(vec![
+                Span::raw("Delete this note? "),
+                Span::styled("d", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": Confirm  "),
+                Span::styled("any other key", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": Cancel"),
+            ])
+        } else {
+            Line::from(vec![
+                Span::raw("Up/Down: Navigate  "),
+                Span::raw("Enter: Open/Edit  "),
+                Span::raw("n: New Note  "),
+                Span::styled("d", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(": Delete  "),
+                Span::raw("q: Quit"),
+            ])
+        };
         let help = Paragraph::new(help_text).block(Block::default().borders(Borders::ALL));
         f.render_widget(help, chunks[2]);
     }

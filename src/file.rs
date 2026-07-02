@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::metadata::NoteMetadata;
 use crate::{args::Args, note};
 use log::info;
+use std::fs;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -86,6 +87,20 @@ pub fn load_and_decrypt_note_content(
             "File does not contain Ryokan magic bytes.".to_string(),
         ))
     }
+}
+
+/// Deletes both the encrypted note file and its metadata
+pub fn delete_note_files(notes_dir: &Path, uuid: &str) -> Result<(), AppError> {
+    let (enc_path, meta_path) = note_paths(notes_dir, uuid);
+
+    if enc_path.exists() {
+        fs::remove_file(&enc_path).map_err(AppError::Io)?;
+    }
+    if meta_path.exists() {
+        fs::remove_file(&meta_path).map_err(AppError::Io)?;
+    }
+    info!("Deleted note {uuid}");
+    Ok(())
 }
 
 /// Opens the file in the default text editor

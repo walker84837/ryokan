@@ -72,7 +72,8 @@ pub fn derive_key_from_pin(pin: &str, salt: &[u8]) -> Result<Key<aes_gcm::Aes256
     argon2
         .hash_password_into(pin.as_bytes(), salt, &mut key)
         .map_err(|e| AppError::PinHash(format!("Key derivation failed: {e}")))?;
-    Ok(*Key::<aes_gcm::Aes256Gcm>::from_slice(&key))
+    let key_array: [u8; 32] = key;
+    Ok(Key::<aes_gcm::Aes256Gcm>::from(key_array))
 }
 
 pub fn handle_pin_setup_and_verification(

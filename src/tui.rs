@@ -391,7 +391,10 @@ impl App {
                 Span::raw("Delete this note? "),
                 Span::styled("d", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(": Confirm  "),
-                Span::styled("any other key", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "any other key",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(": Cancel"),
             ])
         } else {

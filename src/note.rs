@@ -32,7 +32,8 @@ pub fn decrypt_note_content(encrypted_data: &[u8], pin: &str) -> Result<Vec<u8>,
     let key = pin::derive_key_from_pin(pin, salt)?;
     let cipher = Aes256Gcm::new(&key);
 
-    let nonce_array: [u8; 12] = nonce_slice.try_into()
+    let nonce_array: [u8; 12] = nonce_slice
+        .try_into()
         .map_err(|_| AppError::Decryption("Invalid nonce length".to_string()))?;
     let nonce = aes_gcm::Nonce::from(nonce_array);
 
